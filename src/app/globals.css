@@ -1,0 +1,100 @@
+@import 'tailwindcss';
+
+@layer base {
+  :root {
+    --forest: #246b50;
+    --green: #347d60;
+    --canvas: #f5f7f5;
+    --surface: #ffffff;
+    --text: #17251e;
+    --muted: #64736a;
+    --warning: #e7a23b;
+    --danger: #c94c4c;
+    --radius: 8px;
+  }
+
+  body {
+    @apply bg-canvas text-text antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  * {
+    @apply border-gray-200;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-forest text-white font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus-ring-forest transition-colors;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-surface text-text border border-gray-300 font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus-ring-gray-300 transition-colors;
+  }
+
+  .btn-danger {
+    @apply px-4 py-2 bg-danger text-white font-medium rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus-ring-danger transition-colors;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-forest;
+  }
+
+  .card {
+    @apply bg-surface border border-gray-200 rounded-xl p-6 shadow-sm;
+  }
+
+  .stat-card {
+    @apply bg-surface border border-gray-200 rounded-xl p-6 shadow-sm;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-available {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-blocked {
+    @apply bg-danger text-white;
+  }
+
+  .badge-warning {
+    @apply bg-warning-100 text-warning-800;
+  }
+
+  .badge-expired {
+    @apply bg-danger-100 text-danger-800;
+  }
+
+  .table {
+    @apply min-w-full divide-y divide-gray-200;
+  }
+
+  .table th {
+    @apply bg-gray-50 px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider;
+  }
+
+  .table td {
+    @apply px-4 py-3 text-sm text-text border-b border-gray-100;
+  }
+
+  .page-header {
+    @apply flex flex-col gap-1;
+  }
+
+  .page-title {
+    @apply text-lg font-semibold text-text tracking-tight;
+  }
+
+  .page-description {
+    @apply text-sm text-muted;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
