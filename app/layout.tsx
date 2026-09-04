@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import './src/app/globals.css';
+import { Fraunces, Manrope } from 'next/font/google';
+import './globals.css';
 
-const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
+const fraunces = Fraunces({ variable: '--font-fraunces', subsets: ['latin'], axes: ['opsz'] });
+const manrope = Manrope({ variable: '--font-manrope', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'ALIMENTA — Gestão e Distribuição Alimentar Comunitária',
+  title: 'Alimenta+ — Gestão e Distribuição Alimentar Comunitária',
   description: 'Sistema de gestão e distribuição alimentar comunitária',
 };
 
@@ -15,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-PT" className={`${inter.variable} h-full`}>
+    <html lang="pt-PT" className={`${fraunces.variable} ${manrope.variable} h-full`}>
       <body className="min-h-full">{children}</body>
     </html>
   );
