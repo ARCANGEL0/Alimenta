@@ -1,26 +1,211 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-forest: #1B5E40;
+  --color-forest-dark: #14532D;
+  --color-green: #2E8B57;
+  --color-leaf: #4ADE80;
+  --color-canvas: #F7F9F6;
+  --color-surface: #FFFFFF;
+  --color-ink: #0F1A14;
+  --color-muted: #5C6B62;
+  --color-line: #E3E9E4;
+  --color-warning: #E7A23B;
+  --color-danger: #C94C4C;
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-family: var(--font-sans);
+  }
+
+  ::selection {
+    background: var(--color-forest);
+    color: white;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-7xl px-6 lg:px-8;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-forest px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:bg-forest-dark hover:shadow-lg hover:shadow-forest/20 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-forest focus:ring-offset-2;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-line bg-surface px-6 py-3 text-sm font-semibold text-ink transition-all hover:border-forest/30 hover:text-forest active:scale-[0.98];
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-line bg-surface px-4 py-3.5 text-[15px] text-ink placeholder:text-muted/60 transition-all focus:border-forest focus:outline-none focus:ring-4 focus:ring-forest/10;
+  }
+
+  .label-field {
+    @apply mb-1.5 block text-[13px] font-semibold text-ink/80;
+  }
+
+  .card {
+    @apply rounded-2xl border border-line bg-surface;
+  }
+
+  .nav-link {
+    @apply text-sm font-medium text-ink/60 transition-colors hover:text-ink;
+  }
+
+  .eyebrow {
+    @apply text-[13px] font-semibold uppercase tracking-[0.08em] text-forest;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .bg-hero-pattern {
+    background-image: radial-gradient(circle at 1px 1px, rgba(27, 94, 64, 0.08) 1px, transparent 0);
+    background-size: 32px 32px;
+  }
+
+  .nav-link-underline {
+    position: relative;
+  }
+
+  .nav-link-underline::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -4px;
+    height: 2px;
+    width: 100%;
+    background: var(--color-forest);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s ease;
+  }
+
+  .nav-link-underline:hover::after {
+    transform: scaleX(1);
+  }
+}
+
+/* Animações */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes countUp {
+  from { opacity: 0.3; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes bounce-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(6px); }
+}
+
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.9); }
+  70% { transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(24px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(var(--reveal-y, 24px)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer utilities {
+  .animate-fade-up { animation: fadeUp 0.5s ease-out both; }
+  .animate-fade-in { animation: fadeIn 0.6s ease-out both; }
+  .animate-slide-in-left { animation: slideInLeft 0.4s ease-out both; }
+  .animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+  .animate-count-up { animation: countUp 0.4s ease-out both; }
+  .animate-marquee { animation: marquee 22s linear infinite; }
+  .animate-bounce-soft { animation: bounce-soft 1.8s ease-in-out infinite; }
+  .animate-pop-in { animation: pop-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .animate-float { animation: float 5s ease-in-out infinite; }
+  .animate-hero-in { animation: heroIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .animate-hero-in-delay { animation: heroIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both; }
+
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.1s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.2s; }
+  .stagger-5 { animation-delay: 0.25s; }
+  .stagger-6 { animation-delay: 0.3s; }
+}
+
+/* Reveal on scroll — nunca fica invisível (fallback seguro) */
+.reveal {
+  opacity: 1;
+  transform: none;
+}
+
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: reveal-in linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 60%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-fade-in,
+  .animate-slide-in-left,
+  .animate-pulse-soft,
+  .animate-count-up,
+  .animate-marquee,
+  .animate-bounce-soft,
+  .animate-pop-in,
+  .animate-float,
+  .animate-hero-in,
+  .animate-hero-in-delay,
+  .reveal {
+    animation: none !important;
+  }
 }
