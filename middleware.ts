@@ -1,24 +1,23 @@
-import { createServerClient } from './src/lib/postgres/server';
+import { getSessionCookie } from '@/lib/auth/session';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+const ROTAS_PUBLICAS = ['/', '/login', '/api/auth/login', '/api/auth/logout'];
+
 export async function middleware(request: NextRequest) {
-  const postgres = createServerClient();
-  const {
-    data: { session },
-  } = await postgres.auth.getSession();
+  const { pathname } = request.nextUrl;
+  const session = await getSessionCookie();
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login');
-  const isAuthCallback = request.nextUrl.pathname.startsWith('/auth/callback');
+  const ehRotaPublica = pathname === '/' || ROTAS_PUBLICAS.some((r) => r !== '/' && pathname.startsWith(r));
 
-  if (isAuthRoute || isAuthCallback) {
-    if (session) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
+  if (ehRotaPublica) {
     return NextResponse.next();
   }
 
   if (!session) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ erro: 'Não autenticado' }, { status: 401 });
+    }
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
