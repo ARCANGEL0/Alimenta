@@ -1,89 +1,119 @@
 'use client';
 
+import Logo from '@/components/Logo';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Truck,
   Package,
   Clock,
   Users,
-  Trash2,
-  Settings,
   ShieldAlert,
+  Trash2,
+  HeartHandshake,
+  BarChart3,
+  Settings,
   LogOut,
-  ChevronRight,
+  Leaf,
 } from 'lucide-react';
 
 const navItems = [
   { href: '/dashboard', label: 'Visão geral', icon: LayoutDashboard },
-  { href: '/donations', label: 'Doações', icon: Truck },
-  { href: '/inventory', label: 'Inventário', icon: Package },
+  { href: '/doacoes', label: 'Doações', icon: Truck },
+  { href: '/inventario', label: 'Inventário', icon: Package },
   { href: '/expirations', label: 'Validades', icon: Clock },
-  { href: '/beneficiaries', label: 'Beneficiários', icon: Users },
-  { href: '/distributions', label: 'Distribuições', icon: ShieldAlert },
-  { href: '/disposals', label: 'Descarte', icon: Trash2 },
-  { href: '/donors', label: 'Doadores', icon: Users },
-  { href: '/reports', label: 'Relatórios', icon: Clock },
-  { href: '/users', label: 'Utilizadores', icon: ShieldAlert },
+  { href: '/beneficiarios', label: 'Beneficiários', icon: Users },
+  { href: '/distribuicoes', label: 'Distribuições', icon: ShieldAlert },
+  { href: '/descartes', label: 'Descartes', icon: Trash2 },
+  { href: '/doadores', label: 'Doadores', icon: HeartHandshake },
+  { href: '/relatorios', label: 'Relatórios', icon: BarChart3 },
+  { href: '/usuarios', label: 'Utilizadores', icon: Users },
   { href: '/settings', label: 'Definições', icon: Settings },
 ];
 
-const groups = [
-  { label: 'Principal', items: navItems.slice(0, 5) },
-  { label: 'Operações', items: navItems.slice(5, 9) },
-  { label: 'Administração', items: navItems.slice(9) },
+const grupos = [
+  { label: 'Principal', itens: navItems.slice(0, 5) },
+  { label: 'Operações', itens: navItems.slice(5, 9) },
+  { label: 'Administração', itens: navItems.slice(9) },
 ];
 
-export default function AppSidebar() {
+export default function AppSidebar({
+  nome,
+  email,
+  iniciais,
+}: {
+  nome: string;
+  email: string;
+  iniciais: string;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function terminarSessao() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      router.push('/login');
+      router.refresh();
+    }
+  }
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-62 bg-surface border-r border-gray-200 z-20">
-      <div className="flex flex-col h-full">
-        <div className="h-16 flex items-center px-6 border-b border-gray-200">
-          <span className="font-bold text-text tracking-tight">ALIMENTA</span>
-        </div>
+    <aside className="fixed left-0 top-0 z-20 flex h-full w-[248px] flex-col border-r border-line bg-surface">
+      {/* Logo */}
+      <div className="flex h-[72px] items-center gap-2.5 border-b border-line px-6">
+        <Logo size="md" />
+      </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
-          {groups.map((group) => (
-            <div key={group.label} className="mb-4">
-              <h3 className="text-xs font-semibold text-muted uppercase tracking-wider px-2 mb-2">
-                {group.label}
-              </h3>
-              {group.items.map((item) => {
-                const isActive = pathname === item.href;
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                      isActive
-                        ? 'bg-forest text-white'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                    }`}
-                  >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-gray-400'}`} />
-                    {item.label}
-                    {isActive && <ChevronRight className="ml-auto w-3 h-3 text-white" />}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-
-        <div className="border-t border-gray-200 p-4">
-          <div className="px-3">
-            <p className="text-xs text-muted">Utilizador</p>
-            <p className="text-sm font-medium text-text">Operador ALIMENTA</p>
+      {/* Navegação */}
+      <nav className="flex-1 overflow-y-auto px-4 py-6">
+        {grupos.map((grupo) => (
+          <div key={grupo.label} className="mb-6">
+            <h3 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted/70">
+              {grupo.label}
+            </h3>
+            {grupo.itens.map((item) => {
+              const ativo = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`mb-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+                    ativo
+                      ? 'bg-forest text-white shadow-sm shadow-forest/20'
+                      : 'text-ink/60 hover:bg-forest/5 hover:text-forest'
+                  }`}
+                >
+                  <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
+                  {item.label}
+                </Link>
+              );
+            })}
           </div>
-          <button className="mt-4 w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-md transition-colors">
-            <LogOut className="w-4 h-4" />
-            Sair
-          </button>
+        ))}
+      </nav>
+
+      {/* Rodapé */}
+      <div className="border-t border-line p-4">
+        <div className="flex items-center gap-3 rounded-xl bg-canvas px-3 py-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-forest/10 text-sm font-bold text-forest">
+            {iniciais}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{nome}</p>
+            <p className="truncate text-xs text-muted">{email}</p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={terminarSessao}
+          className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-danger/5 hover:text-danger"
+        >
+          <LogOut className="h-4 w-4" />
+          Terminar sessão
+        </button>
       </div>
     </aside>
   );
