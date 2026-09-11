@@ -3,21 +3,21 @@
 import Breadcrumbs from './Breadcrumbs';
 
 interface PageHeaderProps {
-  title: string;
-  description?: string;
-  action?: React.ReactNode;
+  titulo: string;
+  descricao?: string;
+  acao?: React.ReactNode;
 }
 
-export default function PageHeader({ title, description, action }: PageHeaderProps) {
+export default function PageHeader({ titulo, descricao, acao }: PageHeaderProps) {
   return (
     <div className="mb-6">
       <Breadcrumbs />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-3">
         <div>
-          <h1 className="text-lg font-semibold text-text tracking-tight">{title}</h1>
-          {description && <p className="text-sm text-muted">{description}</p>}
+          <h1 className="text-lg font-semibold text-ink tracking-tight">{titulo}</h1>
+          {descricao && <p className="text-sm text-muted">{descricao}</p>}
         </div>
-        {action && <div className="ml-auto">{action}</div>}
+        {acao && <div className="ml-auto">{acao}</div>}
       </div>
     </div>
   );
