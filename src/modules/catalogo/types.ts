@@ -28,7 +28,7 @@ export type CategoriaParaCriar = {
 export type ProdutoParaCriar = {
   sku: string;
   name: string;
-  category_id: string | null;
+  category_id?: string | null;
   default_unit: string;
   description?: string | null;
 };
