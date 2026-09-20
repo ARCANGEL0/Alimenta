@@ -1,4 +1,4 @@
-import { createServerClient } from '@/src/lib/postgres/server';
+import { query } from '@/lib/db/pool';
 import type {
   Doacao,
   DoacaoItem,
@@ -9,131 +9,172 @@ import type {
 } from './types';
 
 export async function listarDoadores(): Promise<Doador[]> {
-  const postgres = createServerClient();
+  const result = await query(
+    'select * from donors order by created_at desc, name asc',
+  );
+  return result.rows as Doador[];
+}
 
-  const { data, error } = await postgres
-    .from('donors')
-    .select('*')
-    .order('name', { ascending: true });
+export async function listarDoadoresAtivos(): Promise<Doador[]> {
+  const result = await query(
+    'select * from donors where is_active = true order by created_at desc, name asc',
+  );
+  return result.rows as Doador[];
+}
 
-  if (error) {
-    throw new Error('Não foi possível listar os doadores.');
-  }
-
-  return (data ?? []) as Doador[];
+export async function listarDoadoresPorTipo(
+  donorType: string,
+): Promise<Doador[]> {
+  const result = await query(
+    `select * from donors where donor_type = $1 order by name asc`,
+    [donorType],
+  );
+  return result.rows as Doador[];
 }
 
 export async function listarDoacoes(): Promise<Doacao[]> {
-  const postgres = createServerClient();
+  const result = await query(
+    `select d.*, dn.name as donor_name
+     from donations d
+     left join donors dn on dn.id = d.donor_id
+     order by d.received_at desc`,
+  );
+  return result.rows as Doacao[];
+}
 
-  const { data, error } = await postgres
-    .from('donations')
-    .select(`
-      *,
-      donors (name)
-    `)
-    .order('received_at', { ascending: false });
-
-  if (error) {
-    throw new Error('Não foi possível listar as doações.');
-  }
-
-  return (
-    data?.map((item) => ({
-      ...item,
-      donor_name: item.donors?.name ?? null,
-      donors: undefined,
-    })) ?? []
-  ) as Doacao[];
+export async function listarDoacoesPorStatus(
+  status: string,
+): Promise<Doacao[]> {
+  const result = await query(
+    `select d.*, dn.name as donor_name
+     from donations d
+     left join donors dn on dn.id = d.donor_id
+     where d.status = $1
+     order by d.received_at desc`,
+    [status],
+  );
+  return result.rows as Doacao[];
 }
 
 export async function listarItensDaDoacao(
   donationId: string,
 ): Promise<DoacaoItem[]> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('donation_items')
-    .select(`
-      *,
-      products (name)
-    `)
-    .eq('donation_id', donationId)
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    throw new Error('Não foi possível listar os itens da doação.');
-  }
-
-  return (
-    data?.map((item) => ({
-      ...item,
-      product_name: item.products?.name ?? null,
-      products: undefined,
-    })) ?? []
-  ) as DoacaoItem[];
+  const result = await query(
+    `select di.*, p.name as product_name
+     from donation_items di
+     left join products p on p.id = di.product_id
+     where di.donation_id = $1
+     order by di.created_at asc`,
+    [donationId],
+  );
+  return result.rows as DoacaoItem[];
 }
 
-export async function criarDoador(payload: DoadorParaCriar): Promise<Doador> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('donors')
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error || !data) {
-    throw new Error('Não foi possível criar o doador.');
-  }
-
-  return data as Doador;
+export async function criarDoador(
+  payload: DoadorParaCriar,
+): Promise<Doador> {
+  const result = await query(
+    `insert into donors (code, name, donor_type, email, phone, address, notes)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     returning *`,
+    [
+      payload.code,
+      payload.name,
+      payload.donor_type ?? null,
+      payload.email ?? null,
+      payload.phone ?? null,
+      payload.address ?? null,
+      payload.notes ?? null,
+    ],
+  );
+  return result.rows[0] as Doador;
 }
 
-export async function criarDoacao(payload: DoacaoParaCriar): Promise<Doacao> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('donations')
-    .insert(payload)
-    .select(`
-      *,
-      donors (name)
-    `)
-    .single();
-
-  if (error || !data) {
-    throw new Error('Não foi possível criar a doação.');
-  }
-
-  return {
-    ...data,
-    donor_name: data.donors?.name ?? null,
-    donors: undefined,
-  } as Doacao;
+export async function criarDoacao(
+  payload: DoacaoParaCriar,
+): Promise<Doacao> {
+  const result = await query(
+    `insert into donations (reference, donor_id, received_at, notes)
+     values ($1, $2, $3, $4)
+     returning *`,
+    [
+      'DO-' + crypto.randomUUID().slice(0, 8),
+      payload.donor_id,
+      payload.received_at,
+      payload.notes ?? null,
+    ],
+  );
+  return result.rows[0] as Doacao;
 }
 
 export async function criarItemDaDoacao(
   payload: DoacaoItemParaCriar,
 ): Promise<DoacaoItem> {
-  const postgres = createServerClient();
+  const result = await query(
+    `insert into donation_items (donation_id, product_id, quantity_received, unit_code, supplier_batch_code, expiry_date, expiry_type)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     returning *`,
+    [
+      payload.donation_id,
+      payload.product_id ?? null,
+      payload.quantity_received ?? null,
+      payload.unit_code ?? null,
+      payload.supplier_batch_code ?? null,
+      payload.expiry_date ?? null,
+      payload.expiry_type ?? null,
+    ],
+  );
+  return result.rows[0] as DoacaoItem;
+}
 
-  const { data, error } = await postgres
-    .from('donation_items')
-    .insert(payload)
-    .select(`
-      *,
-      products (name)
-    `)
-    .single();
+export async function listarDoacoesPorDoador(
+  donorId: string,
+): Promise<Doacao[]> {
+  const result = await query(
+    `select d.*, dn.name as donor_name
+     from donations d
+     left join donors dn on dn.id = d.donor_id
+     where d.donor_id = $1
+     order by d.received_at desc`,
+    [donorId],
+  );
+  return result.rows as Doacao[];
+}
 
-  if (error || !data) {
-    throw new Error('Não foi possível criar o item da doação.');
-  }
+export async function listarDoacoesPorData(
+  startDate: string,
+  endDate: string,
+): Promise<Doacao[]> {
+  const result = await query(
+    `select d.*, dn.name as donor_name
+     from donations d
+     left join donors dn on dn.id = d.donor_id
+     where d.received_at >= $1 and d.received_at <= $2
+     order by d.received_at desc`,
+    [startDate, endDate],
+  );
+  return result.rows as Doacao[];
+}
 
-  return {
-    ...data,
-    product_name: data.products?.name ?? null,
-    products: undefined,
-  } as DoacaoItem;
+export async function listarDoacoesPorPeriodo(startDate: string, endDate: string): Promise<Doacao[]> {
+  const result = await query(`select d.*, dn.name as donor_name from donations d left join donors dn on dn.id = d.donor_id where d.received_at >= $1 and d.received_at <= $2 order by d.received_at desc`, [startDate, endDate]);
+  return result.rows as Doacao[];
+}
+
+
+export async function buscarDoadorPorCodigo(code: string): Promise<Doador | null> {
+  const result = await query(`select * from donors where code = $1`, [code]);
+  return result.rows[0] ?? null;
+}
+
+
+export async function obterTotalDoacoesPorEstado(): Promise<Array<{ status: string; total: number }>> {
+  const result = await query(`select status, count(*) as total from donations group by status order by total desc`);
+  return result.rows;
+}
+
+
+export async function obterTotalItensPorDoacao(donationId: string): Promise<number> {
+  const result = await query(`select count(*) as total from donation_items where donation_id = $1`, [donationId]);
+  return Number(result.rows[0]?.total ?? 0);
 }
