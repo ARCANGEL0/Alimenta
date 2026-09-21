@@ -59,7 +59,7 @@ export type DoacaoParaCriar = {
 
 export type DoacaoItemParaCriar = {
   donation_id: string;
-  product_id: string | null;
+  product_id?: string | null;
   quantity_received: number;
   unit_code: string;
   supplier_batch_code?: string | null;
