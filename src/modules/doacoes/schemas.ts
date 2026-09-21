@@ -21,7 +21,7 @@ export const doacaoItemSchema = z.object({
   product_id: z.string().nullable().optional(),
   quantity_received: z
     .number()
-    .min(0, 'A quantidade recebida não pode ser negativa.'),
+    .min(0.001, 'A quantidade recebida deve ser superior a zero.').max(100000, 'A quantidade recebida não pode exceder 100000.'),
   unit_code: z.string().min(1, 'A unidade é obrigatória.'),
   supplier_batch_code: z.string().nullable().optional(),
   expiry_date: z.string().nullable().optional(),
@@ -41,7 +41,13 @@ export const doadorAtualizarSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
+export const doacaoAtualizarSchema = z.object({
+  status: z.string().optional(),
+  notes: z.string().nullable().optional(),
+});
+
 export type DoadorInput = z.infer<typeof doadorSchema>;
 export type DoacaoInput = z.infer<typeof doacaoSchema>;
 export type DoacaoItemInput = z.infer<typeof doacaoItemSchema>;
 export type DoadorAtualizarInput = z.infer<typeof doadorAtualizarSchema>;
+export type DoacaoAtualizarInput = z.infer<typeof doacaoAtualizarSchema>;
