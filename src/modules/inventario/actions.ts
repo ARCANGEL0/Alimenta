@@ -1,13 +1,15 @@
 'use server';
 
-import { z } from 'zod';
-
-import { hasRole } from '@/src/lib/permissions';
-import type { Role } from '@/src/lib/permissions';
+import { query, transacao } from '@/lib/db/pool';
+import { verificarSessao } from '@/lib/auth/middleware-servidor';
+import type { Role } from '@/lib/auth/roles';
 import {
   ajusteStockSchema,
   loteAtualizarSchema,
   loteSchema,
+  type AjusteStockInput,
+  type LoteAtualizarInput,
+  type LoteInput,
 } from './schemas';
 import {
   criarLote,
@@ -24,10 +26,26 @@ export async function actionListarLotes(): Promise<{
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
     const lotes = await listarLotes();
     return { lotes };
   } catch (erro) {
     return { lotes: [], erro: 'Erro ao listar lotes.' };
+  }
+}
+
+export async function actionListarLotesPorStatus(
+  status: string,
+): Promise<{
+  lotes: Awaited<ReturnType<typeof listarLotes>>;
+  erro?: string;
+}> {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+    const lotes = await listarLotes();
+    return { lotes: lotes.filter((l) => l.status === status) };
+  } catch (erro) {
+    return { lotes: [], erro: 'Erro ao listar lotes por status.' };
   }
 }
 
@@ -38,6 +56,7 @@ export async function actionListarMovimentosDoLote(
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
     const movimentos = await listarMovimentosDoLote(batchId);
     return { movimentos };
   } catch (erro) {
@@ -46,10 +65,12 @@ export async function actionListarMovimentosDoLote(
 }
 
 export async function actionCriarLote(
-  input: z.infer<typeof loteSchema>,
+  input: LoteInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_OPERADOR]);
-  if (!permitido) {
+  let sessao;
+  try {
+    sessao = await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch {
     return { sucesso: false, erro: 'Sem permissão para criar lotes.' };
   }
 
@@ -60,25 +81,47 @@ export async function actionCriarLote(
       erro: resultado.error.issues[0]?.message ?? 'Dados inválidos.',
     };
   }
+  const d = resultado.data;
 
   try {
-    await criarLote(resultado.data);
-    revalidatePath('/inventario');
-    return { sucesso: true };
-  } catch (erro) {
-    return {
-      sucesso: false,
-      erro: 'Não foi possível criar o lote.',
-    };
+    return await transacao(async (client) => {
+      const existe = await client.query(`select 1 from batches where internal_code = $1`, [d.internal_code]);
+      if (existe.rows.length > 0) {
+        return { sucesso: false, erro: 'Código interno de lote já existe.' };
+      }
+      const lote = await client.query(
+        `insert into batches (
+           internal_code, product_id, warehouse_id, storage_location_id,
+           received_at, expiry_date, expiry_type, initial_quantity,
+           on_hand_quantity, reserved_quantity, available_quantity, unit_code, status
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $8, 0, $8, $9, 'available')
+         returning id`,
+        [
+          d.internal_code, d.product_id, d.warehouse_id, d.storage_location_id ?? null,
+          d.received_at, d.expiry_date ?? null, d.expiry_type ?? null,
+          d.initial_quantity, d.unit_code,
+        ],
+      );
+      await client.query(
+        `insert into stock_movements (batch_id, movement_type, quantity, unit_code, source_type, reason, created_by)
+         values ($1, 'receipt', $2, $3, 'manual', 'Entrada manual de lote', $4)`,
+        [lote.rows[0].id, d.initial_quantity, d.unit_code, sessao.userId],
+      );
+      revalidatePath('/inventario');
+      return { sucesso: true };
+    });
+  } catch {
+    return { sucesso: false, erro: 'Não foi possível criar o lote.' };
   }
 }
 
 export async function actionAtualizarLote(
   id: string,
-  input: z.infer<typeof loteAtualizarSchema>,
+  input: LoteAtualizarInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para editar lotes.' };
   }
 
@@ -91,20 +134,16 @@ export async function actionAtualizarLote(
   }
 
   try {
-    const postgres = (await import('@/src/lib/postgres/server'))
-      .createServerClient();
-    const { error } = await postgres
-      .from('batches')
-      .update(resultado.data)
-      .eq('id', id);
-
-    if (error) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível atualizar o lote.',
-      };
-    }
-
+    await query(
+      `update batches set status = coalesce($2, status), warehouse_id = coalesce($3, warehouse_id),
+       storage_location_id = coalesce($4, storage_location_id), updated_at = now() where id = $1`,
+      [
+        id,
+        resultado.data.status ?? null,
+        resultado.data.warehouse_id ?? null,
+        resultado.data.storage_location_id ?? null,
+      ],
+    );
     revalidatePath('/inventario');
     return { sucesso: true };
   } catch (erro) {
@@ -116,10 +155,11 @@ export async function actionAtualizarLote(
 }
 
 export async function actionRegistarAjusteStock(
-  input: z.infer<typeof ajusteStockSchema> & { created_by: string },
+  input: AjusteStockInput & { created_by: string },
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_OPERADOR]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch {
     return { sucesso: false, erro: 'Sem permissão para ajustar stock.' };
   }
 
@@ -130,87 +170,80 @@ export async function actionRegistarAjusteStock(
       erro: resultado.error.issues[0]?.message ?? 'Dados inválidos.',
     };
   }
+  const d = resultado.data;
+  const quantidade = Math.abs(d.quantity);
+  const delta = d.movement_type === 'adjustment_in' ? quantidade : -quantidade;
 
   try {
-    const postgres = (await import('@/src/lib/postgres/server'))
-      .createServerClient();
+    return await transacao(async (client) => {
+      const r = await client.query(
+        `select unit_code, on_hand_quantity, reserved_quantity from batches where id = $1 for update`,
+        [d.batch_id],
+      );
+      const lote = r.rows[0];
+      if (!lote) return { sucesso: false, erro: 'Lote não encontrado.' };
 
-    // Busca o lote para saber a unidade e o saldo atual.
-    const { data: lote, error: erroLote } = await postgres
-      .from('batches')
-      .select('unit_code, on_hand_quantity, reserved_quantity')
-      .eq('id', input.batch_id)
-      .single();
+      const novoOnHand = Number(lote.on_hand_quantity) + delta;
+      if (novoOnHand < Number(lote.reserved_quantity)) {
+        return { sucesso: false, erro: 'Stock insuficiente: o ajuste deixaria o lote negativo ou abaixo do reservado.' };
+      }
 
-    if (erroLote || !lote) {
-      return {
-        sucesso: false,
-        erro: 'Lote não encontrado.',
-      };
-    }
+      await client.query(
+        `insert into stock_movements (batch_id, movement_type, quantity, unit_code, source_type, reason, created_by)
+         values ($1, $2, $3, $4, 'manual', $5, $6)`,
+        [d.batch_id, d.movement_type, quantidade, lote.unit_code, d.reason, input.created_by],
+      );
+      await client.query(
+        `update batches
+         set on_hand_quantity = on_hand_quantity + $1,
+             available_quantity = available_quantity + $1,
+             status = case when on_hand_quantity + $1 = 0 then 'depleted' else status end,
+             updated_at = now()
+         where id = $2`,
+        [delta, d.batch_id],
+      );
+      revalidatePath('/inventario');
+      return { sucesso: true };
+    });
+  } catch {
+    return { sucesso: false, erro: 'Não foi possível registar o ajuste de stock.' };
+  }
+}
 
-    const quantidade = Math.abs(input.quantity);
-    const entrada =
-      input.movement_type === 'adjustment_in';
+export async function actionDesativarLote(
+  id: string,
+): Promise<{ sucesso: boolean; erro?: string }> {
+  return actionAtualizarLote(id, { status: 'depleted' });
+}
 
-    const novoOnHand =
-      lote.on_hand_quantity + (entrada ? quantidade : -quantidade);
+export async function actionBloquearLote(
+  id: string,
+): Promise<{ sucesso: boolean; erro?: string }> {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch (erro) {
+    return { sucesso: false, erro: 'Sem permissão para bloquear lotes.' };
+  }
 
-    if (novoOnHand < 0) {
-      return {
-        sucesso: false,
-        erro: 'Ajuste resultaria em saldo físico negativo.',
-      };
-    }
-
-    const novoAvailable = novoOnHand - lote.reserved_quantity;
-
-    // Registra o movimento de stock.
-    const { error: erroMovimento } = await postgres
-      .from('stock_movements')
-      .insert({
-        batch_id: input.batch_id,
-        movement_type: input.movement_type,
-        quantity: quantidade,
-        unit_code: lote.unit_code,
-        source_type: 'manual',
-        source_id: null,
-        reason: input.reason,
-        created_by: input.created_by,
-      });
-
-    if (erroMovimento) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível registar o movimento de ajuste.',
-      };
-    }
-
-    // Atualiza o saldo do lote.
-    const { error: erroUpdate } = await postgres
-      .from('batches')
-      .update({
-        on_hand_quantity: novoOnHand,
-        available_quantity: novoAvailable,
-        status:
-          novoOnHand === 0 ? 'depleted' : lote.status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', input.batch_id);
-
-    if (erroUpdate) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível atualizar o saldo do lote.',
-      };
-    }
-
+  try {
+    await query(
+      `update batches set status = 'blocked', updated_at = now() where id = $1`,
+      [id],
+    );
     revalidatePath('/inventario');
     return { sucesso: true };
   } catch (erro) {
     return {
       sucesso: false,
-      erro: 'Não foi possível registar o ajuste de stock.',
+      erro: 'Não foi possível bloquear o lote.',
     };
   }
 }
+export async function actionAjusteStockUtilizador(
+  userId: string,
+  batchId: string,
+  input: Omit<AjusteStockInput, 'batch_id'>,
+): Promise<{ sucesso: boolean; erro?: string }> {
+  return actionRegistarAjusteStock({ ...input, batch_id: batchId, created_by: userId });
+}
+
