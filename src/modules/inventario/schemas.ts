@@ -6,11 +6,14 @@ export const loteSchema = z.object({
   warehouse_id: z.string().min(1, 'O armazém é obrigatório.'),
   storage_location_id: z.string().nullable().optional(),
   received_at: z.string().min(1, 'A data de receção é obrigatória.'),
-  expiry_date: z.string().nullable().optional(),
-  expiry_type: z.enum(['use_by', 'best_before', 'none']).nullable().optional(),
+  expiry_date: z.string().nullable().optional().refine((val) => val == null || new Date(val) > new Date(), 'A validade não pode ser no passado.'),
+  expiry_type: z
+    .enum(['use_by', 'best_before', 'none'])
+    .nullable()
+    .optional(),
   initial_quantity: z
     .number()
-    .min(0, 'A quantidade inicial não pode ser negativa.'),
+    .min(0, 'A quantidade inicial não pode ser negativa.').max(100000, 'A quantidade inicial não pode exceder 100000.'),
   unit_code: z.string().min(1, 'A unidade é obrigatória.'),
 });
 
