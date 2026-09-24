@@ -1,7 +1,8 @@
 'use server';
 
-import { hasRole } from '@/src/lib/permissions';
-import type { Role } from '@/src/lib/permissions';
+import { query } from '@/lib/db/pool';
+import { verificarSessao } from '@/lib/auth/middleware-servidor';
+import type { Role } from '@/lib/auth/roles';
 import {
   limiaresSchema,
   loteAvaliarSchema,
@@ -27,6 +28,7 @@ export async function actionListarLotesValidade(): Promise<{
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR, ROLE_SOCIAL_WORKER]);
     const lotes = await listarLotesValidade();
     return { lotes };
   } catch (erro) {
@@ -39,6 +41,7 @@ export async function actionObterLimiaresValidade(): Promise<{
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR, ROLE_SOCIAL_WORKER]);
     const limiares = await obterLimiaresValidade();
     return { limiares };
   } catch (erro) {
@@ -52,8 +55,9 @@ export async function actionObterLimiaresValidade(): Promise<{
 export async function actionAtualizarLimiaresValidade(
   input: LimiaresInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para alterar limiares.' };
   }
 
@@ -66,23 +70,12 @@ export async function actionAtualizarLimiaresValidade(
   }
 
   try {
-    const postgres = (await import('@/src/lib/postgres/server'))
-      .createServerClient();
-    const { error } = await postgres
-      .from('settings')
-      .upsert({
-        key: 'expiry_thresholds',
-        value: resultado.data,
-        updated_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível guardar os limiares.',
-      };
-    }
-
+    await query(
+      `insert into settings (key, value, updated_at)
+       values ('expiry_thresholds', $1, now())
+       on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at`,
+      [JSON.stringify(resultado.data)],
+    );
     revalidatePath('/validade');
     return { sucesso: true };
   } catch (erro) {
@@ -96,8 +89,9 @@ export async function actionAtualizarLimiaresValidade(
 export async function actionBloquearLote(
   input: LoteBloquearInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_OPERADOR]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para bloquear lotes.' };
   }
 
@@ -124,12 +118,9 @@ export async function actionBloquearLote(
 export async function actionAvaliarLote(
   input: LoteAvaliarInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([
-    ROLE_ADMIN,
-    ROLE_OPERADOR,
-    ROLE_SOCIAL_WORKER,
-  ]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR, ROLE_SOCIAL_WORKER]);
+  } catch (erro) {
     return {
       sucesso: false,
       erro: 'Sem permissão para avaliar lotes.',
@@ -148,7 +139,7 @@ export async function actionAvaliarLote(
     await avaliarLote(
       resultado.data.batch_id,
       resultado.data.avaliacao,
-      resultado.data.notas,
+      resultado.data.notas ?? null,
     );
     revalidatePath('/validade');
     return { sucesso: true };
