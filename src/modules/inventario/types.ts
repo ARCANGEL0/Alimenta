@@ -38,10 +38,10 @@ export type LoteParaCriar = {
   internal_code: string;
   product_id: string;
   warehouse_id: string;
-  storage_location_id: string | null;
+  storage_location_id?: string | null;
   received_at: string;
-  expiry_date: string | null;
-  expiry_type: string | null;
+  expiry_date?: string | null;
+  expiry_type?: string | null;
   initial_quantity: number;
   unit_code: string;
 };
