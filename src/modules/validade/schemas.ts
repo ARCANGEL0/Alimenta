@@ -14,7 +14,7 @@ export const loteAvaliarSchema = z.object({
 export const limiaresSchema = z.object({
   expired_days: z.number().min(0, 'Dias expirados não pode ser negativo.'),
   critical_days: z.number().min(0, 'Dias críticos não pode ser negativo.'),
-  attention_days: z.number().min(0, 'Dias de atenção não pode ser negativo.'),
+  attention_days: z.number().min(0, 'Dias de atenção não pode ser negativo.').max(30, 'Dias de atenção não pode ser superior a 30.'),
 });
 
 export type LoteBloquearInput = z.infer<typeof loteBloquearSchema>;
