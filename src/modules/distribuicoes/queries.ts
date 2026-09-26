@@ -1,136 +1,144 @@
-import { createServerClient } from '@/src/lib/postgres/server';
+import { query } from '@/lib/db/pool';
 import type {
   Distribuicao,
   DistribuicaoParaCriar,
   ItemDistribuicao,
   ItemDistribuicaoParaCriar,
-  ReservarStockInput,
 } from './types';
 
 export async function listarDistribuicoes(): Promise<Distribuicao[]> {
-  const postgres = createServerClient();
+  const result = await query(
+    `select d.*, h.code as household_code
+     from distributions d
+     left join households h on h.id = d.household_id
+     order by d.created_at desc`,
+  );
+  return result.rows as Distribuicao[];
+}
 
-  const { data, error } = await postgres
-    .from('distributions')
-    .select(`
-      *,
-      households (code)
-    `)
-    .order('created_at', { ascending: false });
+export async function listarDistribuicoesPorStatus(
+  status: string,
+): Promise<Distribuicao[]> {
+  const result = await query(
+    `select d.*, h.code as household_code
+     from distributions d
+     left join households h on h.id = d.household_id
+     where d.status = $1
+     order by d.created_at desc`,
+    [status],
+  );
+  return result.rows as Distribuicao[];
+}
 
-  if (error) {
-    throw new Error('Não foi possível listar as distribuições.');
-  }
-
-  return (
-    data?.map((item) => ({
-      ...item,
-      household_code: item.households?.code ?? null,
-      households: undefined,
-    })) ?? []
-  ) as Distribuicao[];
+export async function listarDistribuicoesPorCasa(
+  householdId: string,
+): Promise<Distribuicao[]> {
+  const result = await query(
+    `select d.*, h.code as household_code
+     from distributions d
+     left join households h on h.id = d.household_id
+     where d.household_id = $1
+     order by d.created_at desc`,
+    [householdId],
+  );
+  return result.rows as Distribuicao[];
 }
 
 export async function criarDistribuicao(
   payload: DistribuicaoParaCriar,
 ): Promise<Distribuicao> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('distributions')
-    .insert(payload)
-    .select(`
-      *,
-      households (code)
-    `)
-    .single();
-
-  if (error || !data) {
-    throw new Error('Não foi possível criar a distribuição.');
-  }
-
-  return {
-    ...data,
-    household_code: data.households?.code ?? null,
-    households: undefined,
-  } as Distribuicao;
+  const result = await query(
+    `insert into distributions (reference, household_id, scheduled_at, notes, status)
+     values ($1, $2, $3, $4, 'draft')
+     returning *`,
+    [
+      'DIST-' + Date.now().toString(36).toUpperCase(),
+      payload.household_id,
+      payload.scheduled_at ?? null,
+      payload.notes ?? null,
+    ],
+  );
+  return result.rows[0] as Distribuicao;
 }
 
 export async function criarItemDistribuicao(
   payload: ItemDistribuicaoParaCriar,
 ): Promise<ItemDistribuicao> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('distribution_items')
-    .insert(payload)
-    .select(`
-      *,
-      products (name)
-    `)
-    .single();
-
-  if (error || !data) {
-    throw new Error('Não foi possível criar o item da distribuição.');
-  }
-
-  return {
-    ...data,
-    product_name: data.products?.name ?? null,
-    products: undefined,
-  } as ItemDistribuicao;
+  const result = await query(
+    `insert into distribution_items (distribution_id, product_id, quantity_requested, unit_code)
+     values ($1, $2, $3, $4)
+     returning *`,
+    [
+      payload.distribution_id,
+      payload.product_id ?? null,
+      payload.quantity_requested,
+      payload.unit_code ?? null,
+    ],
+  );
+  return result.rows[0] as ItemDistribuicao;
 }
 
 export async function listarItensDaDistribuicao(
   distributionId: string,
 ): Promise<ItemDistribuicao[]> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('distribution_items')
-    .select(`
-      *,
-      products (name)
-    `)
-    .eq('distribution_id', distributionId)
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    throw new Error('Não foi possível listar os itens da distribuição.');
-  }
-
-  return (
-    data?.map((item) => ({
-      ...item,
-      product_name: item.products?.name ?? null,
-      products: undefined,
-    })) ?? []
-  ) as ItemDistribuicao[];
+  const result = await query(
+    `select di.*, p.name as product_name
+     from distribution_items di
+     left join products p on p.id = di.product_id
+     where di.distribution_id = $1
+     order by di.created_at asc`,
+    [distributionId],
+  );
+  return result.rows as ItemDistribuicao[];
 }
 
-export async function listarReservasDoItem(
-  distributionItemId: string,
-): Promise<ReservaStock[]> {
-  const postgres = createServerClient();
+export async function listarDistribuicoesRecentes(
+  limite: number = 10,
+): Promise<Distribuicao[]> {
+  const result = await query(
+    `select d.*, h.code as household_code
+     from distributions d
+     left join households h on h.id = d.household_id
+     order by d.created_at desc
+     limit $1`,
+    [limite],
+  );
+  return result.rows as Distribuicao[];
+}
 
-  const { data, error } = await postgres
-    .from('stock_reservations')
-    .select(`
-      *,
-      batches (internal_code)
-    `)
-    .eq('distribution_item_id', distributionItemId)
-    .order('created_at', { ascending: true });
+export async function listarDistribuicoesPorTipo(
+  tipo: string,
+): Promise<Distribuicao[]> {
+  const result = await query(
+    `select d.*, h.code as household_code
+     from distributions d
+     left join households h on h.id = d.household_id
+     where d.status = $1
+     order by d.created_at desc`,
+    [tipo],
+  );
+  return result.rows as Distribuicao[];
+}
 
-  if (error) {
-    throw new Error('Não foi possível listar as reservas do item.');
-  }
+export async function listarDistribuicoesPorPeriodo(startDate: string, endDate: string): Promise<Distribuicao[]> {
+  const result = await query(`select d.*, h.code as household_code from distributions d left join households h on h.id = d.household_id where d.created_at >= $1 and d.created_at <= $2 order by d.created_at desc`, [startDate, endDate]);
+  return result.rows as Distribuicao[];
+}
 
-  return (
-    data?.map((item) => ({
-      ...item,
-      batch_internal_code: item.batches?.internal_code ?? null,
-      batches: undefined,
-    })) ?? []
-  ) as ReservaStock[];
+
+export async function buscarDistribuicaoPorReferencia(reference: string): Promise<Distribuicao | null> {
+  const result = await query(`select d.*, h.code as household_code from distributions d left join households h on h.id = d.household_id where d.reference = $1`, [reference]);
+  return result.rows[0] ?? null;
+}
+
+
+export async function obterTotalDistribuicoesPorEstado(): Promise<Array<{ status: string; total: number }>> {
+  const result = await query(`select status, count(*) as total from distributions group by status order by total desc`);
+  return result.rows;
+}
+
+
+export async function listarDistribuicoesAtivas(): Promise<Distribuicao[]> {
+  const result = await query(`select d.*, h.code as household_code from distributions d left join households h on h.id = d.household_id where d.status in ('draft','preparing','reserved') order by d.created_at desc`);
+  return result.rows as Distribuicao[];
 }
