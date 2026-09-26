@@ -1,7 +1,8 @@
 'use server';
 
-import { hasRole } from '@/src/lib/permissions';
-import type { Role } from '@/src/lib/permissions';
+import { query, transacao, chamarRpc } from '@/lib/db/pool';
+import { verificarSessao } from '@/lib/auth/middleware-servidor';
+import type { Role } from '@/lib/auth/roles';
 import {
   distribuicaoAtualizarSchema,
   distribuicaoSchema,
@@ -17,7 +18,6 @@ import {
   criarItemDistribuicao,
   listarDistribuicoes,
   listarItensDaDistribuicao,
-  listarReservasDoItem,
 } from './queries';
 import { revalidatePath } from 'next/cache';
 
@@ -29,6 +29,7 @@ export async function actionListarDistribuicoes(): Promise<{
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
     const distribuicoes = await listarDistribuicoes();
     return { distribuicoes };
   } catch (erro) {
@@ -43,6 +44,7 @@ export async function actionListarItensDaDistribuicao(
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
     const itens = await listarItensDaDistribuicao(distributionId);
     return { itens };
   } catch (erro) {
@@ -50,25 +52,12 @@ export async function actionListarItensDaDistribuicao(
   }
 }
 
-export async function actionListarReservasDoItem(
-  distributionItemId: string,
-): Promise<{
-  reservas: Awaited<ReturnType<typeof listarReservasDoItem>>;
-  erro?: string;
-}> {
-  try {
-    const reservas = await listarReservasDoItem(distributionItemId);
-    return { reservas };
-  } catch (erro) {
-    return { reservas: [], erro: 'Erro ao listar reservas.' };
-  }
-}
-
 export async function actionCriarDistribuicao(
   input: DistribuicaoInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_OPERADOR]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para criar distribuições.' };
   }
 
@@ -81,6 +70,10 @@ export async function actionCriarDistribuicao(
   }
 
   try {
+    const agregadoExistente = await query(`select id from households where id = $1`, [resultado.data.household_id]);
+    if (agregadoExistente.rows.length === 0) {
+      return { sucesso: false, erro: 'Agregado não encontrado.' };
+    }
     await criarDistribuicao(resultado.data);
     revalidatePath('/distribuicoes');
     return { sucesso: true };
@@ -95,8 +88,9 @@ export async function actionCriarDistribuicao(
 export async function actionCriarItemDistribuicao(
   input: ItemDistribuicaoInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_OPERADOR]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para adicionar itens.' };
   }
 
@@ -120,95 +114,13 @@ export async function actionCriarItemDistribuicao(
   }
 }
 
-export async function actionReservarStock(
-  input: ReservarStockInput,
-): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_OPERADOR]);
-  if (!permitido) {
-    return { sucesso: false, erro: 'Sem permissão para reservar stock.' };
-  }
-
-  const resultado = reservarStockSchema.safeParse(input);
-  if (!resultado.success) {
-    return {
-      sucesso: false,
-      erro: resultado.error.issues[0]?.message ?? 'Dados inválidos.',
-    };
-  }
-
-  try {
-    const postgres = (await import('@/src/lib/postgres/server'))
-      .createServerClient();
-
-    // Bloqueia o lote para evitar concorrência.
-    const { data: lote, error: erroLote } = await postgres
-      .from('batches')
-      .select('available_quantity, reserved_quantity, on_hand_quantity')
-      .eq('id', input.batch_id)
-      .single();
-
-    if (erroLote || !lote) {
-      return { sucesso: false, erro: 'Lote não encontrado.' };
-    }
-
-    if (lote.available_quantity < input.quantity) {
-      return {
-        sucesso: false,
-        erro: 'Quantidade disponível insuficiente no lote.',
-      };
-    }
-
-    // Cria a reserva.
-    const { error: erroReserva } = await postgres
-      .from('stock_reservations')
-      .insert({
-        distribution_item_id: input.distribution_item_id,
-        batch_id: input.batch_id,
-        quantity: input.quantity,
-        status: 'active',
-      });
-
-    if (erroReserva) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível criar a reserva.',
-      };
-    }
-
-    // Atualiza o saldo reservado e disponível do lote.
-    const { error: erroUpdate } = await postgres
-      .from('batches')
-      .update({
-        reserved_quantity: lote.reserved_quantity + input.quantity,
-        available_quantity: lote.available_quantity - input.quantity,
-        status: 'reserved',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', input.batch_id);
-
-    if (erroUpdate) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível atualizar o saldo do lote.',
-      };
-    }
-
-    revalidatePath('/distribuicoes');
-    return { sucesso: true };
-  } catch (erro) {
-    return {
-      sucesso: false,
-      erro: 'Não foi possível reservar stock.',
-    };
-  }
-}
-
 export async function actionAtualizarDistribuicao(
   id: string,
   input: DistribuicaoAtualizarInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para editar distribuições.' };
   }
 
@@ -221,20 +133,10 @@ export async function actionAtualizarDistribuicao(
   }
 
   try {
-    const postgres = (await import('@/src/lib/postgres/server'))
-      .createServerClient();
-    const { error } = await postgres
-      .from('distributions')
-      .update(resultado.data)
-      .eq('id', id);
-
-    if (error) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível atualizar a distribuição.',
-      };
-    }
-
+    await query(
+      `update distributions set status = coalesce($2, status), notes = coalesce($3, notes), updated_at = now() where id = $1`,
+      [id, resultado.data.status ?? null, resultado.data.notes ?? null],
+    );
     revalidatePath('/distribuicoes');
     return { sucesso: true };
   } catch (erro) {
@@ -243,4 +145,123 @@ export async function actionAtualizarDistribuicao(
       erro: 'Não foi possível atualizar a distribuição.',
     };
   }
+}
+
+export async function actionConfirmarDistribuicao(
+  distributionId: string,
+): Promise<{ sucesso: boolean; mensagem?: string; erro?: string }> {
+  let sessao;
+  try {
+    sessao = await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch {
+    return { sucesso: false, erro: 'Sem permissão para confirmar distribuições.' };
+  }
+
+  try {
+    const r = await chamarRpc(
+      `select confirm_distribution($1::uuid, $2::uuid) as resultado`,
+      [distributionId, sessao.userId],
+    );
+    revalidatePath('/distribuicoes');
+    return r;
+  } catch {
+    return { sucesso: false, erro: 'Não foi possível confirmar a distribuição.' };
+  }
+}
+
+export async function actionCancelarDistribuicao(
+  id: string,
+): Promise<{ sucesso: boolean; mensagem?: string; erro?: string }> {
+  let sessao;
+  try {
+    sessao = await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch {
+    return { sucesso: false, erro: 'Sem permissão para cancelar distribuições.' };
+  }
+
+  try {
+    const r = await chamarRpc(
+      `select cancel_distribution($1::uuid, $2::uuid) as resultado`,
+      [id, sessao.userId],
+    );
+    revalidatePath('/distribuicoes');
+    return r;
+  } catch {
+    return { sucesso: false, erro: 'Não foi possível cancelar a distribuição.' };
+  }
+}
+
+export async function actionReservarStock(
+  input: ReservarStockInput,
+): Promise<{ sucesso: boolean; erro?: string }> {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+  } catch {
+    return { sucesso: false, erro: 'Sem permissão para reservar stock.' };
+  }
+
+  const resultado = reservarStockSchema.safeParse(input);
+  if (!resultado.success) {
+    return {
+      sucesso: false,
+      erro: resultado.error.issues[0]?.message ?? 'Dados inválidos.',
+    };
+  }
+  const { batch_id, distribution_item_id, quantity } = resultado.data;
+
+  try {
+    return await transacao(async (client) => {
+      const item = await client.query(
+        `select di.distribution_id, d.status
+         from distribution_items di join distributions d on d.id = di.distribution_id
+         where di.id = $1 for update of d`,
+        [distribution_item_id],
+      );
+      if (item.rows.length === 0) return { sucesso: false, erro: 'Item não encontrado.' };
+      if (['delivered', 'cancelled'].includes(item.rows[0].status)) {
+        return { sucesso: false, erro: 'Esta distribuição já está fechada.' };
+      }
+
+      const lote = await client.query(
+        `select available_quantity, status from batches where id = $1 for update`,
+        [batch_id],
+      );
+      if (lote.rows.length === 0) return { sucesso: false, erro: 'Lote não encontrado.' };
+      if (lote.rows[0].status !== 'available') return { sucesso: false, erro: 'O lote não está disponível.' };
+      if (Number(lote.rows[0].available_quantity) < quantity) {
+        return { sucesso: false, erro: 'Stock insuficiente neste lote.' };
+      }
+
+      await client.query(
+        `insert into stock_reservations (distribution_item_id, batch_id, quantity, status)
+         values ($1, $2, $3, 'active')`,
+        [distribution_item_id, batch_id, quantity],
+      );
+      await client.query(
+        `update batches set reserved_quantity = reserved_quantity + $1,
+         available_quantity = available_quantity - $1, updated_at = now()
+         where id = $2`,
+        [quantity, batch_id],
+      );
+      await client.query(
+        `update distribution_items set quantity_reserved = quantity_reserved + $1 where id = $2`,
+        [quantity, distribution_item_id],
+      );
+      await client.query(
+        `update distributions set status = 'reserved', updated_at = now() where id = $1`,
+        [item.rows[0].distribution_id],
+      );
+      revalidatePath('/distribuicoes');
+      return { sucesso: true };
+    });
+  } catch {
+    return { sucesso: false, erro: 'Não foi possível reservar stock.' };
+  }
+}
+
+export async function actionAdicionarItemDistribuicao(
+  distributionId: string,
+  input: ItemDistribuicaoInput,
+): Promise<{ sucesso: boolean; erro?: string }> {
+  return actionCriarItemDistribuicao({ ...input, distribution_id: distributionId });
 }
