@@ -24,31 +24,23 @@ export type ItemDistribuicao = {
   unit_code: string | null;
 };
 
-export type ReservaStock = {
-  id: string;
+export type ReservarStock = {
+  distribution_item_id: string;
   batch_id: string;
-  batch_internal_code: string | null;
   quantity: number;
-  status: string;
 };
 
 export type DistribuicaoParaCriar = {
   household_id: string;
-  scheduled_at: string | null;
+  scheduled_at?: string | null;
   notes?: string | null;
 };
 
 export type ItemDistribuicaoParaCriar = {
   distribution_id: string;
-  product_id: string | null;
+  product_id?: string | null;
   quantity_requested: number;
-  unit_code: string | null;
-};
-
-export type ReservarStockInput = {
-  distribution_item_id: string;
-  batch_id: string;
-  quantity: number;
+  unit_code?: string | null;
 };
 
 export type DistribuicaoParaAtualizar = {
