@@ -14,12 +14,6 @@ export type Descarte = {
   created_at: string;
 };
 
-export type MotivoDescarte = {
-  code: string;
-  label: string;
-  requerDescricao: boolean;
-};
-
 export type DescarteParaCriar = {
   batch_id: string;
   quantity: number;
