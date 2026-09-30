@@ -2,9 +2,7 @@ import { z } from 'zod';
 
 export const descarteSchema = z.object({
   batch_id: z.string().min(1, 'O lote é obrigatório.'),
-  quantity: z
-    .number()
-    .min(0.001, 'A quantidade deve ser superior a zero.'),
+  quantity: z.number().min(0.001, 'A quantidade deve ser superior a zero.').max(100000, 'A quantidade não pode exceder 100000.'),
   reason_code: z.enum([
     'expired',
     'damaged_packaging',
@@ -19,7 +17,7 @@ export const descarteSchema = z.object({
 
 export type DescarteInput = z.infer<typeof descarteSchema>;
 
-export const MOTIVOS_DESCARTE: MotivoDescarte[] = [
+export const MOTIVOS_DESCARTE = [
   { code: 'expired', label: 'Validade ultrapassada', requerDescricao: false },
   { code: 'damaged_packaging', label: 'Embalagem danificada', requerDescricao: false },
   { code: 'improper_storage', label: 'Conservação inadequada', requerDescricao: false },
