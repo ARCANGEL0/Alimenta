@@ -1,4 +1,4 @@
-import { createServerClient } from '@/src/lib/postgres/server';
+import { query } from '@/lib/db/pool';
 import type {
   Agregado,
   AgregadoParaCriar,
@@ -9,119 +9,80 @@ import type {
 } from './types';
 
 export async function listarAgregados(): Promise<Agregado[]> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('households')
-    .select('*')
-    .order('code', { ascending: true });
-
-  if (error) {
-    throw new Error('Não foi possível listar os agregados.');
-  }
-
-  return (data ?? []) as Agregado[];
+  const result = await query(
+    'select * from households order by code asc',
+  );
+  return result.rows as Agregado[];
 }
 
 export async function listarBeneficiarios(): Promise<Beneficiario[]> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('beneficiaries')
-    .select(`
-      *,
-      households (code)
-    `)
-    .order('code', { ascending: true });
-
-  if (error) {
-    throw new Error('Não foi possível listar os beneficiários.');
-  }
-
-  return (
-    data?.map((item) => ({
-      ...item,
-      household_code: item.households?.code ?? null,
-      households: undefined,
-    })) ?? []
-  ) as Beneficiario[];
+  const result = await query(
+    `select b.*, h.code as household_code
+     from beneficiaries b
+     left join households h on h.id = b.household_id
+     order by b.code asc`,
+  );
+  return result.rows as Beneficiario[];
 }
 
 export async function listarNecessidades(
   beneficiaryId: string,
 ): Promise<Necessidade[]> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('beneficiary_needs')
-    .select('*')
-    .eq('beneficiary_id', beneficiaryId)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    throw new Error('Não foi possível listar as necessidades.');
-  }
-
-  return (data ?? []) as Necessidade[];
+  const result = await query(
+    `select * from beneficiary_needs
+     where beneficiary_id = $1
+     order by created_at desc`,
+    [beneficiaryId],
+  );
+  return result.rows as Necessidade[];
 }
 
 export async function criarAgregado(
   payload: AgregadoParaCriar,
 ): Promise<Agregado> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('households')
-    .insert(payload)
-    .select()
-    .single();
-
-  if (error || !data) {
-    throw new Error('Não foi possível criar o agregado.');
-  }
-
-  return data as Agregado;
+  const result = await query(
+    `insert into households (code, household_size, parish, status)
+     values ($1, $2, $3, $4)
+     returning *`,
+    [payload.code, payload.household_size ?? null, payload.parish ?? null, payload.status ?? null],
+  );
+  return result.rows[0] as Agregado;
 }
 
 export async function criarBeneficiario(
   payload: BeneficiarioParaCriar,
 ): Promise<Beneficiario> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('beneficiaries')
-    .insert(payload)
-    .select(`
-      *,
-      households (code)
-    `)
-    .single();
-
-  if (error || !data) {
-    throw new Error('Não foi possível criar o beneficiário.');
-  }
-
-  return {
-    ...data,
-    household_code: data.households?.code ?? null,
-    households: undefined,
-  } as Beneficiario;
+  const result = await query(
+    `insert into beneficiaries (code, household_id, full_name, phone, email, is_primary_contact, status)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     returning *`,
+    [
+      payload.code,
+      payload.household_id,
+      payload.full_name ?? null,
+      payload.phone ?? null,
+      payload.email ?? null,
+      payload.is_primary_contact ?? null,
+      payload.status ?? null,
+    ],
+  );
+  return result.rows[0] as Beneficiario;
 }
 
 export async function criarNecessidade(
   payload: NecessidadeParaCriar,
 ): Promise<Necessidade> {
-  const postgres = createServerClient();
+  const result = await query(
+    `insert into beneficiary_needs (beneficiary_id, need_type, value, notes)
+     values ($1, $2, $3, $4)
+     returning *`,
+    [payload.beneficiary_id, payload.need_type, payload.value, payload.notes ?? null],
+  );
+  return result.rows[0] as Necessidade;
+}
 
-  const { data, error } = await postgres
-    .from('beneficiary_needs')
-    .insert(payload)
-    .select()
-    .single();
 
-  if (error || !data) {
-    throw new Error('Não foi possível criar a necessidade.');
-  }
-
-  return data as Necessidade;
+export async function listarBeneficiariosPorAgregado(householdId: string): Promise<Beneficiario[]> {
+  const result = await query(`select b.*, h.code as household_code from beneficiaries b left join households h on h.id = b.household_id where b.household_id = $1 order by b.code asc`, [householdId]);
+  return result.rows as Beneficiario[];
 }
