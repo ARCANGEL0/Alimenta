@@ -1,7 +1,8 @@
 'use server';
 
-import { hasRole } from '@/src/lib/permissions';
-import type { Role } from '@/src/lib/permissions';
+import { query } from '@/lib/db/pool';
+import { verificarSessao } from '@/lib/auth/middleware-servidor';
+import type { Role } from '@/lib/auth/roles';
 import {
   agregadoAtualizarSchema,
   agregadoSchema,
@@ -33,8 +34,22 @@ export async function actionListarAgregados(): Promise<{
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN]);
     const agregados = await listarAgregados();
     return { agregados };
+  } catch (erro) {
+    return { agregados: [], erro: 'Erro ao listar agregados.' };
+  }
+}
+
+export async function actionListarAgregadosAtivos(): Promise<{
+  agregados: Awaited<ReturnType<typeof listarAgregados>>;
+  erro?: string;
+}> {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR]);
+    const agregados = await listarAgregados();
+    return { agregados: agregados.filter((a) => a.status !== 'inativo') };
   } catch (erro) {
     return { agregados: [], erro: 'Erro ao listar agregados.' };
   }
@@ -45,6 +60,7 @@ export async function actionListarBeneficiarios(): Promise<{
   erro?: string;
 }> {
   try {
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR, ROLE_SOCIAL_WORKER]);
     const beneficiarios = await listarBeneficiarios();
     return { beneficiarios };
   } catch (erro) {
@@ -52,25 +68,27 @@ export async function actionListarBeneficiarios(): Promise<{
   }
 }
 
-export async function actionListarNecessidades(
-  beneficiaryId: string,
+export async function actionListarBeneficiariosPorCasa(
+  householdId: string,
 ): Promise<{
-  necessidades: Awaited<ReturnType<typeof listarNecessidades>>;
+  beneficiarios: Awaited<ReturnType<typeof listarBeneficiarios>>;
   erro?: string;
 }> {
   try {
-    const necessidades = await listarNecessidades(beneficiaryId);
-    return { necessidades };
+    await verificarSessao([ROLE_ADMIN, ROLE_OPERADOR, ROLE_SOCIAL_WORKER]);
+    const beneficiarios = await listarBeneficiarios();
+    return { beneficiarios: beneficiarios.filter((b) => b.household_id === householdId) };
   } catch (erro) {
-    return { necessidades: [], erro: 'Erro ao listar necessidades.' };
+    return { beneficiarios: [], erro: 'Erro ao listar beneficiários.' };
   }
 }
 
 export async function actionCriarAgregado(
   input: AgregadoInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para criar agregados.' };
   }
 
@@ -83,6 +101,10 @@ export async function actionCriarAgregado(
   }
 
   try {
+    const agregadoExistente = await query(`select id from households where code = $1`, [resultado.data.code]);
+    if (agregadoExistente.rows.length > 0) {
+      return { sucesso: false, erro: 'Código de agregado já existe.' };
+    }
     await criarAgregado(resultado.data);
     revalidatePath('/beneficiarios');
     return { sucesso: true };
@@ -97,8 +119,9 @@ export async function actionCriarAgregado(
 export async function actionCriarBeneficiario(
   input: BeneficiarioInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_SOCIAL_WORKER]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_SOCIAL_WORKER]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para criar beneficiários.' };
   }
 
@@ -125,8 +148,9 @@ export async function actionCriarBeneficiario(
 export async function actionCriarNecessidade(
   input: NecessidadeInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_SOCIAL_WORKER]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_SOCIAL_WORKER]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para criar necessidades.' };
   }
 
@@ -154,8 +178,9 @@ export async function actionAtualizarAgregado(
   id: string,
   input: AgregadoAtualizarInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para editar agregados.' };
   }
 
@@ -168,20 +193,15 @@ export async function actionAtualizarAgregado(
   }
 
   try {
-    const postgres = (await import('@/src/lib/postgres/server'))
-      .createServerClient();
-    const { error } = await postgres
-      .from('households')
-      .update(resultado.data)
-      .eq('id', id);
-
-    if (error) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível atualizar o agregado.',
-      };
-    }
-
+    await query(
+      `update households set household_size = coalesce($2, household_size), parish = coalesce($3, parish), status = coalesce($4, status), updated_at = now() where id = $1`,
+      [
+        id,
+        resultado.data.household_size ?? null,
+        resultado.data.parish ?? null,
+        resultado.data.status ?? null,
+      ],
+    );
     revalidatePath('/beneficiarios');
     return { sucesso: true };
   } catch (erro) {
@@ -196,8 +216,9 @@ export async function actionAtualizarBeneficiario(
   id: string,
   input: BeneficiarioAtualizarInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN, ROLE_SOCIAL_WORKER]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN, ROLE_SOCIAL_WORKER]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para editar beneficiários.' };
   }
 
@@ -210,20 +231,17 @@ export async function actionAtualizarBeneficiario(
   }
 
   try {
-    const postgres = (await import('@/src/lib/postgres/server'))
-      .createServerClient();
-    const { error } = await postgres
-      .from('beneficiaries')
-      .update(resultado.data)
-      .eq('id', id);
-
-    if (error) {
-      return {
-        sucesso: false,
-        erro: 'Não foi possível atualizar o beneficiário.',
-      };
-    }
-
+    await query(
+      `update beneficiaries set full_name = coalesce($2, full_name), phone = coalesce($3, phone), email = coalesce($4, email), is_primary_contact = coalesce($5, is_primary_contact), status = coalesce($6, status), updated_at = now() where id = $1`,
+      [
+        id,
+        resultado.data.full_name ?? null,
+        resultado.data.phone ?? null,
+        resultado.data.email ?? null,
+        resultado.data.is_primary_contact ?? null,
+        resultado.data.status ?? null,
+      ],
+    );
     revalidatePath('/beneficiarios');
     return { sucesso: true };
   } catch (erro) {
