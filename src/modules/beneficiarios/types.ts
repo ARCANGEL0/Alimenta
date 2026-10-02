@@ -41,7 +41,7 @@ export type AgregadoParaCriar = {
 export type BeneficiarioParaCriar = {
   code: string;
   household_id: string;
-  full_name: string | null;
+  full_name?: string | null;
   phone?: string | null;
   email?: string | null;
   is_primary_contact?: boolean;
