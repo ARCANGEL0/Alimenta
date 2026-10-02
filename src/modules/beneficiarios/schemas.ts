@@ -38,7 +38,18 @@ export const agregadoAtualizarSchema = z.object({
   status: z.string().nullable().optional(),
 });
 
+export const beneficiarioAtualizarSchema = z.object({
+  full_name: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  email: z.string().email('E-mail inválido.').nullable().optional(),
+  is_primary_contact: z.boolean().optional(),
+  status: z.string().nullable().optional(),
+});
+
 export type AgregadoInput = z.infer<typeof agregadoSchema>;
 export type BeneficiarioInput = z.infer<typeof beneficiarioSchema>;
 export type NecessidadeInput = z.infer<typeof necessidadeSchema>;
 export type AgregadoAtualizarInput = z.infer<typeof agregadoAtualizarSchema>;
+export type BeneficiarioAtualizarInput = z.infer<
+  typeof beneficiarioAtualizarSchema
+>;
