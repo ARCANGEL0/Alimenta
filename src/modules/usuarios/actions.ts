@@ -1,7 +1,8 @@
 'use server';
 
-import { hasRole } from '@/src/lib/permissions';
-import type { Role } from '@/src/lib/permissions';
+import { query } from '@/lib/db/pool';
+import { verificarSessao } from '@/lib/auth/middleware-servidor';
+import type { Role } from '@/lib/auth/roles';
 import {
   usuarioParaAtualizarSchema,
   usuarioParaCriarSchema,
@@ -9,9 +10,9 @@ import {
   type UsuarioParaCriarInput,
 } from './schemas';
 import {
+  atualizarUsuario,
   criarUsuario,
   desativarUsuario,
-  atualizarUsuario,
   listarUsuarios,
 } from './queries';
 import { revalidatePath } from 'next/cache';
@@ -22,12 +23,8 @@ export async function actionListarUsuarios(): Promise<{
   usuarios: Awaited<ReturnType<typeof listarUsuarios>>;
   erro?: string;
 }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
-    return { usuarios: [], erro: 'Sem permissão para listar utilizadores.' };
-  }
-
   try {
+    await verificarSessao([ROLE_ADMIN]);
     const usuarios = await listarUsuarios();
     return { usuarios };
   } catch (erro) {
@@ -38,8 +35,9 @@ export async function actionListarUsuarios(): Promise<{
 export async function actionCriarUsuario(
   input: UsuarioParaCriarInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para criar utilizadores.' };
   }
 
@@ -52,14 +50,15 @@ export async function actionCriarUsuario(
   }
 
   try {
+    const usuarioExistente = await query(`select id from profiles where email = $1`, [resultado.data.email]);
+    if (usuarioExistente.rows.length > 0) {
+      return { sucesso: false, erro: 'E-mail já registado.' };
+    }
     await criarUsuario(resultado.data);
     revalidatePath('/usuarios');
     return { sucesso: true };
   } catch (erro) {
-    return {
-      sucesso: false,
-      erro: 'Não foi possível criar o utilizador.',
-    };
+    return { sucesso: false, erro: 'Não foi possível criar o utilizador.' };
   }
 }
 
@@ -67,8 +66,9 @@ export async function actionAtualizarUsuario(
   id: string,
   input: UsuarioParaAtualizarInput,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para atualizar utilizadores.' };
   }
 
@@ -85,18 +85,16 @@ export async function actionAtualizarUsuario(
     revalidatePath('/usuarios');
     return { sucesso: true };
   } catch (erro) {
-    return {
-      sucesso: false,
-      erro: 'Não foi possível atualizar o utilizador.',
-    };
+    return { sucesso: false, erro: 'Não foi possível atualizar o utilizador.' };
   }
 }
 
 export async function actionDesativarUsuario(
   id: string,
 ): Promise<{ sucesso: boolean; erro?: string }> {
-  const permitido = await hasRole([ROLE_ADMIN]);
-  if (!permitido) {
+  try {
+    await verificarSessao([ROLE_ADMIN]);
+  } catch (erro) {
     return { sucesso: false, erro: 'Sem permissão para desativar utilizadores.' };
   }
 
@@ -105,9 +103,20 @@ export async function actionDesativarUsuario(
     revalidatePath('/usuarios');
     return { sucesso: true };
   } catch (erro) {
-    return {
-      sucesso: false,
-      erro: 'Não foi possível desativar o utilizador.',
-    };
+    return { sucesso: false, erro: 'Não foi possível desativar o utilizador.' };
   }
+}
+
+export async function actionCriarUsuarioSimples(input: {
+  email: string;
+  password: string;
+  full_name: string;
+  role: string;
+}): Promise<{ sucesso: boolean; erro?: string }> {
+  return actionCriarUsuario({
+    email: input.email,
+    password: input.password,
+    full_name: input.full_name,
+    roles: [input.role],
+  });
 }
