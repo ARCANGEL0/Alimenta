@@ -1,21 +1,3 @@
-export type IndicadorStock = {
-  unidade: string;
-  quantidade: number;
-};
-
-export type IndicadorPeriodo = {
-  periodo: string;
-  entradas: number;
-  saidas: number;
-};
-
-export type AlertaValidade = {
-  lote: string;
-  produto: string | null;
-  estado: 'vencido' | 'critico' | 'atencao';
-  dias: number | null;
-};
-
 export type IndicadoresDashboard = {
   stockDisponivel: number;
   entradasPeriodo: number;
@@ -23,7 +5,16 @@ export type IndicadoresDashboard = {
   descartesPeriodo: number;
   lotesVencidos: number;
   lotesCriticos: number;
-  stockPorUnidade: IndicadorStock[];
-  entradasVsSaidas: IndicadorPeriodo[];
-  alertasValidade: AlertaValidade[];
+  stockPorUnidade: Array<{ unidade: string; quantidade: number }>;
+  entradasVsSaidas: Array<{
+    periodo: string;
+    entradas: number;
+    saidas: number;
+  }>;
+  alertasValidade: Array<{
+    lote: string;
+    produto: string | null;
+    estado: 'vencido' | 'critico' | 'atencao';
+    dias: number | null;
+  }>;
 };
