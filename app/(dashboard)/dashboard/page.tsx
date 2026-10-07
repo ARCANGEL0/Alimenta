@@ -1,190 +1,109 @@
-import PageHeader from '@/src/components/layout/PageHeader';
-import { Card } from '@/src/components/ui/card';
-import { actionObterIndicadoresDashboard } from '@/src/modules/dashboard/actions';
-import { formatNumber } from '@/src/lib/formatting';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { useState, useEffect } from 'react';
+import { connection } from 'next/server';
+import { Card } from '@/components/ui/card';
+import Tabela from '@/components/ui/tabela';
+import { Badge } from '@/components/ui/badge';
+import { Package, TrendingUp, ArrowDownRight, AlertTriangle } from 'lucide-react';
+import {
+  obterIndicadoresDashboard,
+  obterLotesProximosVencimento,
+  obterMovimentosPorDia,
+} from '@/modules/dashboard/queries';
+import { formatNumber, formatDate } from '@/lib/formatting';
 
-type IndicadorCard = {
-  titulo: string;
-  valor: string;
-  subtitulo: string;
-  tipo: 'stock' | 'entradas' | 'saidas' | 'descartes' | 'alertas';
-};
+export const instant = false;
 
-async function carregarIndicadores() {
-  const res = await actionObterIndicadoresDashboard();
-  if (res.erro) {
-    throw new Error(res.erro);
+
+export default async function DashboardPage() {
+  await connection();
+  const ind = await obterIndicadoresDashboard();
+  const lotes = await obterLotesProximosVencimento();
+  const movimentos = await obterMovimentosPorDia(7);
+
+  const porDia = new Map<string, { entradas: number; saidas: number }>();
+  for (const m of movimentos) {
+    const dia = String(m.data).slice(0, 10);
+    const atual = porDia.get(dia) ?? { entradas: 0, saidas: 0 };
+    const q = Number(m.total);
+    if (m.movement_type === 'receipt' || m.movement_type === 'adjustment_in') atual.entradas += q;
+    else atual.saidas += q;
+    porDia.set(dia, atual);
   }
-  return res.indicadores;
-}
+  const dias = Array.from(porDia.entries()).slice(-7);
+  const maxBar = Math.max(1, ...dias.map(([, v]) => Math.max(v.entradas, v.saidas)));
 
-export default function DashboardPage() {
-  const [indicadores, setIndicadores] = useState<
-    Awaited<ReturnType<typeof carregarIndicadores>> | null
-  >(null);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
-
-  useEffect(() => {
-    carregarIndicadores()
-      .then((i) => {
-        setIndicadores(i);
-        setCarregando(false);
-      })
-      .catch((e) => {
-        setErro(e.message);
-        setCarregando(false);
-      });
-  }, []);
-
-  const cards: IndicadorCard[] = indicadores
-    ? [
-        {
-          titulo: 'Stock disponível',
-          valor: formatNumber(indicadores.stockDisponivel),
-          subtitulo: 'Quantidade total disponível',
-          tipo: 'stock',
-        },
-        {
-          titulo: 'Entradas (30 dias)',
-          valor: formatNumber(indicadores.entradasPeriodo),
-          subtitulo: 'Quantidade aceite no período',
-          tipo: 'entradas',
-        },
-        {
-          titulo: 'Saídas (30 dias)',
-          valor: formatNumber(indicadores.saidasPeriodo),
-          subtitulo: 'Distribuições e descartes',
-          tipo: 'saidas',
-        },
-        {
-          titulo: 'Descartes (30 dias)',
-          valor: formatNumber(indicadores.descartesPeriodo),
-          subtitulo: 'Quantidade descartada',
-          tipo: 'descartes',
-        },
-        {
-          titulo: 'Lotes vencidos',
-          valor: String(indicadores.lotesVencidos),
-          subtitulo: 'Bloqueados por validade',
-          tipo: 'alertas',
-        },
-        {
-          titulo: 'Lotes críticos',
-          valor: String(indicadores.lotesCriticos),
-          subtitulo: '0–3 dias para vencer',
-          tipo: 'alertas',
-        },
-      ]
-    : [];
-
-  if (carregando) {
-    return (
-      <div className="p-4 text-center text-muted">A carregar indicadores…</div>
-    );
-  }
-
-  if (erro) {
-    return (
-      <div className="p-4 text-danger-600 text-center">Erro: {erro}</div>
-    );
-  }
+  const stats = [
+    { label: 'Stock disponível', value: formatNumber(ind.stockDisponivel), icon: Package },
+    { label: 'Entradas (30 dias)', value: formatNumber(ind.entradasPeriodo), icon: TrendingUp },
+    { label: 'Saídas (30 dias)', value: formatNumber(ind.saidasPeriodo), icon: ArrowDownRight },
+    { label: 'Lotes a vencer / vencidos', value: `${ind.lotesCriticos} / ${ind.lotesVencidos}`, icon: AlertTriangle },
+  ];
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Visão geral"
-        description="Indicadores de stock, entradas e saídas em tempo real."
-      />
+    <div className="space-y-8">
+      <div className="animate-fade-up">
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Visão geral</h1>
+        <p className="mt-1 text-muted">Indicadores reais de stock, entradas e saídas.</p>
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {cards.map((card) => (
-          <Card key={card.titulo} className="p-4">
-            <p className="text-xs text-muted">{card.titulo}</p>
-            <p className="text-2xl font-semibold text-text">{card.valor}</p>
-            <p className="text-xs text-muted">{card.subtitulo}</p>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((s, i) => (
+          <Card key={s.label} className={`p-5 animate-fade-up stagger-${i + 1}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted">{s.label}</p>
+              <s.icon className="h-5 w-5 text-forest/60" />
+            </div>
+            <p className="mt-2 font-display text-2xl font-semibold text-ink">{s.value}</p>
           </Card>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-text mb-4">
-            Entradas vs saídas (últimos 7 dias)
-          </h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={indicadores?.entradasVsSaidas ?? []}>
-                <XAxis dataKey="periodo" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="entradas" fill="#246b50" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="saidas" fill="#c94c4c" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+        <Card className="p-5 lg:col-span-3">
+          <h2 className="mb-4 text-sm font-semibold text-ink">Entradas vs saídas (últimos 7 dias)</h2>
+          {dias.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted">Sem movimentos nos últimos 7 dias.</p>
+          ) : (
+            <div className="flex h-44 items-end gap-3">
+              {dias.map(([dia, v]) => (
+                <div key={dia} className="flex flex-1 flex-col items-center gap-1">
+                  <div className="flex h-36 w-full items-end justify-center gap-1">
+                    <div
+                      className="w-4 rounded-t bg-forest"
+                      style={{ height: `${(v.entradas / maxBar) * 100}%` }}
+                      title={`Entradas: ${formatNumber(v.entradas)}`}
+                    />
+                    <div
+                      className="w-4 rounded-t bg-danger/70"
+                      style={{ height: `${(v.saidas / maxBar) * 100}%` }}
+                      title={`Saídas: ${formatNumber(v.saidas)}`}
+                    />
+                  </div>
+                  <span className="text-[11px] text-muted">{formatDate(dia).slice(0, 5)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-3 flex gap-4 text-xs text-muted">
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-forest" /> Entradas</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-danger/70" /> Saídas</span>
           </div>
         </Card>
 
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold text-text mb-4">
-            Alertas de validade
-          </h3>
-          <div className="space-y-2">
-            {indicadores?.alertasValidade.map((alerta) => (
-              <div
-                key={alerta.lote}
-                className="flex justify-between items-start px-3 py-2 border rounded-md"
-              >
-                <div>
-                  <p className="text-sm font-medium text-text">
-                    {alerta.lote} — {alerta.produto ?? '—'}
-                  </p>
-                  <p className="text-xs text-muted">
-                    {alerta.dias === null
-                      ? 'Sem validade'
-                      : alerta.dias < 0
-                        ? `Vencido há ${Math.abs(alerta.dias)} dias`
-                        : alerta.dias === 0
-                          ? 'Vence hoje'
-                          : `Vence em ${alerta.dias} dias`}
-                  </p>
-                </div>
-                <span className="text-xs font-semibold">
-                  {alerta.estado === 'vencido' && 'text-danger-600'}
-                  {alerta.estado === 'critico' && 'text-red-600'}
-                  {alerta.estado === 'atencao' && 'text-warning-600'}
-                </span>
-              </div>
-            ))}
-            {indicadores?.alertasValidade.length === 0 && (
-              <p className="text-xs text-muted">Sem alertas de validade.</p>
-            )}
-          </div>
+        <Card className="p-5 lg:col-span-2">
+          <h2 className="mb-4 text-sm font-semibold text-ink">Validades próximas</h2>
+          <Tabela
+            cabecalhos={['Lote', 'Produto', 'Dias']}
+            vazio="Nenhum lote próximo do fim da validade."
+            linhas={lotes.map((l) => [
+              l.lote,
+              l.produto ?? '—',
+              <Badge key={l.lote} variant={l.dias < 0 ? 'danger' : l.dias <= 3 ? 'warning' : 'secondary'}>
+                {l.dias < 0 ? `vencido há ${-l.dias}d` : `${l.dias}d`}
+              </Badge>,
+            ])}
+          />
         </Card>
       </div>
-
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold text-text mb-4">
-          Stock por unidade
-        </h3>
-        <div className="space-y-2">
-          {indicadores?.stockPorUnidade.map((item) => (
-            <div key={item.unidade} className="flex justify-between px-3 py-2 border-b border-gray-100">
-              <span className="text-sm text-text">{item.unidade}</span>
-              <span className="text-sm font-medium text-text">
-                {formatNumber(item.quantidade)}
-              </span>
-            </div>
-          ))}
-          {indicadores?.stockPorUnidade.length === 0 && (
-            <p className="text-xs text-muted px-3 py-2">
-              Sem stock por unidade.
-            </p>
-          )}
-        </div>
-      </Card>
     </div>
   );
 }
