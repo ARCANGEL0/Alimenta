@@ -1,271 +1,147 @@
-import PageHeader from '@/src/components/layout/PageHeader';
-import Button from '@/src/components/ui/button';
-import { Input } from '@/src/components/ui/input';
-import { Card } from '@/src/components/ui/card';
-import { createServerClient } from '@/src/lib/postgres/server';
-import { notFound, redirect } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { connection } from 'next/server';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import PageHeader from '@/components/layout/PageHeader';
+import Tabela from '@/components/ui/tabela';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import Formulario from '@/components/form/Formulario';
+import BotaoAcao from '@/components/form/BotaoAcao';
+import { listarDoacoes, listarItensDaDoacao } from '@/modules/doacoes/queries';
+import {
+  actionAdicionarItemDoacao,
+  actionInspecionarItem,
+  actionFecharInspecao,
+} from '@/modules/doacoes/actions';
+import { listarProdutosAtivos } from '@/modules/catalogo/queries';
+import { estadoDoacao } from '@/lib/estados';
+import { formatDate, formatDateTime, formatNumber } from '@/lib/formatting';
 
-type Doacao = {
-  id: string;
-  reference: string;
-  donor_id: string | null;
-  donor_name: string | null;
-  received_at: string;
-  status: string;
-  notes: string | null;
-};
+export const instant = false;
 
-type Item = {
-  id: string;
-  product_name: string | null;
-  quantity_received: number;
-  quantity_accepted: number;
-  quantity_rejected: number;
-  unit_code: string;
-  supplier_batch_code: string | null;
-  expiry_date: string | null;
-  expiry_type: string | null;
-  inspection_status: string | null;
-  inspection_notes: string | null;
-};
-
-async function buscarDoacao(id: string): Promise<Doacao | null> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('donations')
-    .select(`
-      *,
-      donors (name)
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error || !data) {
-    return null;
-  }
-
-  return {
-    ...data,
-    donor_name: data.donors?.name ?? null,
-    donors: undefined,
-  } as Doacao;
-}
-
-async function buscarItens(id: string): Promise<Item[]> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('donation_items')
-    .select(`
-      *,
-      products (name)
-    `)
-    .eq('donation_id', id)
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    return [];
-  }
-
-  return (
-    data?.map((item) => ({
-      ...item,
-      product_name: item.products?.name ?? null,
-      products: undefined,
-    })) ?? []
-  ) as Item[];
-}
-
-async function atualizarItem(
-  id: string,
-  accepted: number,
-  rejected: number,
-  status: string,
-  notas: string | null,
-) {
-  'use server';
-
-  const postgres = createServerClient();
-  const { error } = await postgres
-    .from('donation_items')
-    .update({
-      quantity_accepted: accepted,
-      quantity_rejected: rejected,
-      inspection_status: status,
-      inspection_notes: notas,
-    })
-    .eq('id', id);
-
-  if (error) {
-    return { erro: 'Não foi possível atualizar o item.' };
-  }
-
-  return { sucesso: true };
-}
-
-export default function DoacaoDetalhePage({
+export default async function DetalheDoacaoPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await connection();
   const { id } = await params;
-  const [doacao, setDoacao] = useState<Doacao | null>(null);
-  const [itens, setItens] = useState<Item[]>([]);
-  const [carregando, setCarregando] = useState(true);
+  const [doacoes, itens, produtos] = await Promise.all([
+    listarDoacoes(),
+    listarItensDaDoacao(id),
+    listarProdutosAtivos(),
+  ]);
+  const doacao = doacoes.find((d) => d.id === id);
+  if (!doacao) notFound();
 
-  useEffect(() => {
-    async function carregar() {
-      const [d, i] = await Promise.all([buscarDoacao(id), buscarItens(id)]);
-      if (!d) {
-        notFound();
-      }
-      setDoacao(d);
-      setItens(i);
-      setCarregando(false);
-    }
-
-    carregar();
-  }, [id]);
-
-  if (carregando) {
-    return (
-      <div className="p-4 text-center text-muted">A carregar doação…</div>
-    );
-  }
-
-  if (!doacao) {
-    return notFound();
-  }
-
-  const totalRecebido = itens.reduce(
-    (s, i) => s + Number(i.quantity_received),
-    0,
-  );
-  const totalAceite = itens.reduce((s, i) => s + Number(i.quantity_accepted), 0);
-  const totalRejeitado = itens.reduce(
-    (s, i) => s + Number(i.quantity_rejected),
-    0,
-  );
+  const e = estadoDoacao(doacao.status);
+  const aberta = doacao.status === 'pending' || doacao.status === 'under_inspection';
+  const porInspecionar = itens.filter((it) => !it.inspection_status).length;
 
   return (
     <div className="space-y-6">
-      <PageHeader title={`Doação ${doacao.reference}`} description="Detalhe, inspeção e itens da doação." />
-
-      <Card className="mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Doador</p>
-            <p className="text-sm text-text">{doacao.donor_name ?? '—'}</p>
-          </div>
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Data de receção</p>
-            <p className="text-sm text-text">
-              {new Date(doacao.received_at).toLocaleString('pt-PT', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </p>
-          </div>
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Estado</p>
-            <p className="text-sm font-semibold text-text">
-              {doacao.status}
-            </p>
-          </div>
-        </div>
-        {doacao.notes && (
-          <div className="px-4 py-3 border-t border-gray-100">
-            <p className="text-xs text-muted">Observações</p>
-            <p className="text-sm text-text">{doacao.notes}</p>
-          </div>
-        )}
+      <PageHeader
+        titulo={`Doação ${doacao.reference}`}
+        descricao={`${doacao.donor_name ?? 'Doador desconhecido'} — recebida em ${formatDate(doacao.received_at)}`}
+      />
+      <Card className="flex flex-wrap items-center gap-3 p-5">
+        <Badge variant={e.variante}>{e.label}</Badge>
+        <span className="text-sm text-muted">Criada em {formatDateTime(doacao.created_at)}</span>
+        {doacao.notes && <span className="text-sm text-muted">· {doacao.notes}</span>}
+        <span className="ml-auto flex items-center gap-4">
+          {aberta && itens.length > 0 && porInspecionar === 0 && (
+            <BotaoAcao
+              acao={actionFecharInspecao.bind(null, doacao.id)}
+              className="btn-primary !py-2 text-xs"
+            >
+              Fechar inspeção e criar lotes
+            </BotaoAcao>
+          )}
+          {aberta && porInspecionar > 0 && (
+            <span className="text-xs text-muted">{porInspecionar} item(ns) por inspecionar</span>
+          )}
+          <Link href="/doacoes" className="text-sm font-medium text-forest hover:underline">
+            ← todas as doações
+          </Link>
+        </span>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <Card>
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Total recebido</p>
-            <p className="text-2xl font-semibold text-text">{totalRecebido}</p>
-          </div>
-        </Card>
-        <Card>
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Total aceite</p>
-            <p className="text-2xl font-semibold text-text">{totalAceite}</p>
-          </div>
-        </Card>
-        <Card>
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted">Total rejeitado</p>
-            <p className="text-2xl font-semibold text-text">{totalRejeitado}</p>
-          </div>
-        </Card>
-      </div>
+      <h2 className="text-sm font-semibold text-ink">Itens recebidos</h2>
+      <Tabela
+        cabecalhos={['Produto', 'Recebido', 'Aceite', 'Rejeitado', 'Lote fornecedor', 'Validade', 'Inspeção']}
+        vazio="Esta doação ainda não tem itens. Adiciona em baixo."
+        linhas={itens.map((it) => [
+          it.product_name ?? '—',
+          `${formatNumber(Number(it.quantity_received))} ${it.unit_code}`,
+          formatNumber(Number(it.quantity_accepted)),
+          formatNumber(Number(it.quantity_rejected)),
+          it.supplier_batch_code ?? '—',
+          it.expiry_date ? formatDate(it.expiry_date) : '—',
+          it.inspection_status ? (
+            <Badge key={it.id} variant={it.inspection_status === 'accepted' ? 'success' : 'danger'}>
+              {it.inspection_status === 'accepted' ? 'aceite' : 'rejeitado'}
+            </Badge>
+          ) : aberta ? (
+            <span key={it.id} className="flex gap-3">
+              <BotaoAcao
+                acao={actionInspecionarItem.bind(null, it.id, 'aceitar')}
+                className="text-xs font-medium text-forest hover:underline"
+              >
+                aceitar
+              </BotaoAcao>
+              <BotaoAcao
+                acao={actionInspecionarItem.bind(null, it.id, 'rejeitar')}
+                className="text-xs font-medium text-danger hover:underline"
+              >
+                rejeitar
+              </BotaoAcao>
+            </span>
+          ) : (
+            '—'
+          ),
+        ])}
+      />
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Produto
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Recebido
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Aceite
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Rejeitado
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Validade
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Estado inspeção
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {itens.map((item) => (
-              <tr key={item.id} className="border-b border-gray-100">
-                <td className="px-4 py-3">{item.product_name ?? '—'}</td>
-                <td className="px-4 py-3">{item.quantity_received}</td>
-                <td className="px-4 py-3">
-                  <Input
-                    value={String(item.quantity_accepted)}
-                    onChange={() => {}}
-                    disabled
-                  />
-                </td>
-                <td className="px-4 py-3">{item.quantity_rejected}</td>
-                <td className="px-4 py-3 text-muted">
-                  {item.expiry_date ?? '—'} ({item.expiry_type ?? '—'})
-                </td>
-                <td className="px-4 py-3">
-                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-gray-100 text-gray-800">
-                    {item.inspection_status ?? 'Pendente'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {itens.length === 0 && (
-              <>
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
-                    Nenhum item registado nesta doação.
-                  </td>
-                </tr>
-              </>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {aberta && (
+        <Formulario
+          titulo="Adicionar item à doação"
+          acao={actionAdicionarItemDoacao.bind(null, id)}
+          botao="Adicionar item"
+          campos={[
+            {
+              name: 'product_id',
+              label: 'Produto',
+              type: 'select',
+              required: true,
+              options: produtos.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` })),
+            },
+            { name: 'quantity_received', label: 'Quantidade recebida', type: 'number', required: true, min: 0.001, step: '0.001' },
+            {
+              name: 'unit_code',
+              label: 'Unidade',
+              type: 'select',
+              required: true,
+              options: [
+                { value: 'kg', label: 'kg' },
+                { value: 'un', label: 'un' },
+                { value: 'l', label: 'l' },
+              ],
+            },
+            { name: 'supplier_batch_code', label: 'Lote do fornecedor', placeholder: 'opcional' },
+            { name: 'expiry_date', label: 'Validade', type: 'date' },
+            {
+              name: 'expiry_type',
+              label: 'Tipo de validade',
+              type: 'select',
+              options: [
+                { value: 'use_by', label: 'Consumir até' },
+                { value: 'best_before', label: 'De preferência antes de' },
+                { value: 'none', label: 'Sem validade' },
+              ],
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }
