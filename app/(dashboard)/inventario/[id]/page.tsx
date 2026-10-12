@@ -1,214 +1,93 @@
-import PageHeader from '@/src/components/layout/PageHeader';
-import { createServerClient } from '@/src/lib/postgres/server';
+import { connection } from 'next/server';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import PageHeader from '@/components/layout/PageHeader';
+import Tabela from '@/components/ui/tabela';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import Formulario from '@/components/form/Formulario';
+import {
+  listarLotes,
+  listarMovimentosDoLote,
+} from '@/modules/inventario/queries';
+import { actionAjusteStockUtilizador } from '@/modules/inventario/actions';
+import type { AjusteStockInput } from '@/modules/inventario/schemas';
+import { verificarSessao } from '@/lib/auth/middleware-servidor';
+import { estadoLote, tipoMovimento } from '@/lib/estados';
+import { formatDate, formatDateTime, formatNumber } from '@/lib/formatting';
 
-type Lote = {
-  id: string;
-  internal_code: string;
-  product_name: string | null;
-  on_hand_quantity: number;
-  reserved_quantity: number;
-  available_quantity: number;
-  unit_code: string;
-  status: string;
-};
+export const instant = false;
 
-type Movimento = {
-  id: string;
-  movement_type: string;
-  quantity: number;
-  unit_code: string;
-  reason: string | null;
-  created_at: string;
-  created_by_name: string | null;
-};
 
-async function buscarLote(id: string): Promise<Lote | null> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('batches')
-    .select(`
-      *,
-      products (name)
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error || !data) {
-    return null;
-  }
-
-  return {
-    id: data.id,
-    internal_code: data.internal_code,
-    product_name: data.products?.name ?? null,
-    on_hand_quantity: data.on_hand_quantity,
-    reserved_quantity: data.reserved_quantity,
-    available_quantity: data.available_quantity,
-    unit_code: data.unit_code,
-    status: data.status,
-  } as Lote;
-}
-
-async function buscarMovimentos(id: string): Promise<Movimento[]> {
-  const postgres = createServerClient();
-
-  const { data, error } = await postgres
-    .from('stock_movements')
-    .select('*')
-    .eq('batch_id', id)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    return [];
-  }
-
-  return (data ?? []) as Movimento[];
-}
-
-const labelsMovimento: Record<string, string> = {
-  receipt: 'Entrada',
-  distribution: 'Saída (distribuição)',
-  disposal: 'Descarte',
-  adjustment_in: 'Ajuste de entrada',
-  adjustment_out: 'Ajuste de saída',
-  reservation_release: 'Libertação de reserva',
-};
-
-export default function LoteDetalhePage({
+export default async function DetalheLotePage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await connection();
   const { id } = await params;
-  const [lote, setLote] = useState<Lote | null>(null);
-  const [movimentos, setMovimentos] = useState<Movimento[]>([]);
-  const [carregando, setCarregando] = useState(true);
-
-  useEffect(() => {
-    async function carregar() {
-      const [l, m] = await Promise.all([buscarLote(id), buscarMovimentos(id)]);
-      if (!l) {
-        notFound();
-      }
-      setLote(l);
-      setMovimentos(m);
-      setCarregando(false);
-    }
-
-    carregar();
-  }, [id]);
-
-  if (carregando) {
-    return (
-      <div className="p-4 text-center text-muted">A carregar lote…</div>
-    );
-  }
-
-  if (!lote) {
-    return notFound();
-  }
+  const sessao = await verificarSessao();
+  const [lotes, movimentos] = await Promise.all([
+    listarLotes(),
+    listarMovimentosDoLote(id),
+  ]);
+  const lote = lotes.find((l) => l.id === id);
+  if (!lote) notFound();
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Lote ${lote.internal_code}`}
-        description="Saldo e histórico de movimentos do lote."
+        titulo={`Lote ${lote.internal_code}`}
+        descricao={`${lote.product_name ?? '—'} · ${lote.warehouse_name ?? '—'}${lote.storage_location_code ? ` · ${lote.storage_location_code}` : ''}`}
+      />
+      <Card className="flex flex-wrap items-center gap-4 p-5">
+        <Badge variant={estadoLote(lote.status).variante}>
+          {estadoLote(lote.status).label}
+        </Badge>
+        <span className="text-sm text-muted">Em stock: <strong className="text-ink">{formatNumber(Number(lote.on_hand_quantity))} {lote.unit_code}</strong></span>
+        <span className="text-sm text-muted">Reservado: <strong className="text-ink">{formatNumber(Number(lote.reserved_quantity))}</strong></span>
+        <span className="text-sm text-muted">Disponível: <strong className="text-ink">{formatNumber(Number(lote.available_quantity))}</strong></span>
+        <span className="text-sm text-muted">Validade: {lote.expiry_date ? formatDate(lote.expiry_date) : '—'}</span>
+        <Link href="/inventario" className="ml-auto text-sm font-medium text-forest hover:underline">
+          ← inventário
+        </Link>
+      </Card>
+
+      <h2 className="text-sm font-semibold text-ink">Movimentos de stock</h2>
+      <Tabela
+        cabecalhos={['Data', 'Tipo', 'Quantidade', 'Un.', 'Motivo', 'Por']}
+        vazio="Sem movimentos neste lote."
+        linhas={movimentos.map((m) => [
+          formatDateTime(m.created_at),
+          tipoMovimento(m.movement_type),
+          formatNumber(Number(m.quantity)),
+          m.unit_code,
+          m.reason ?? '—',
+          m.created_by_name ?? '—',
+        ])}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm">
-          <p className="text-xs text-muted">Saldo físico</p>
-          <p className="text-2xl font-semibold text-text">
-            {lote.on_hand_quantity} {lote.unit_code}
-          </p>
-        </div>
-        <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm">
-          <p className="text-xs text-muted">Reservado</p>
-          <p className="text-2xl font-semibold text-text">
-            {lote.reserved_quantity} {lote.unit_code}
-          </p>
-        </div>
-        <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm">
-          <p className="text-xs text-muted">Disponível</p>
-          <p className="text-2xl font-semibold text-text">
-            {lote.available_quantity} {lote.unit_code}
-          </p>
-        </div>
-        <div className="p-4 rounded-xl border border-gray-200 bg-white shadow-sm">
-          <p className="text-xs text-muted">Estado</p>
-          <p className="text-2xl font-semibold text-text">
-            {lote.status}
-          </p>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-text">
-            Histórico de movimentos
-          </h2>
-        </div>
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Tipo
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Quantidade
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Motivo
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Data
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                Responsável
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {movimentos.map((movimento) => (
-              <tr key={movimento.id} className="border-b border-gray-100">
-                <td className="px-4 py-3">
-                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-gray-100 text-gray-800">
-                    {labelsMovimento[movimento.movement_type] ?? movimento.movement_type}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {movimento.quantity} {movimento.unit_code}
-                </td>
-                <td className="px-4 py-3 text-muted">
-                  {movimento.reason ?? '—'}
-                </td>
-                <td className="px-4 py-3 text-muted">
-                  {new Date(movimento.created_at).toLocaleString('pt-PT', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </td>
-                <td className="px-4 py-3 text-muted">
-                  {movimento.created_by_name ?? '—'}
-                </td>
-              </tr>
-            ))}
-            {movimentos.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
-                  Sem movimentos registados.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {lote.status === 'available' && (
+        <Formulario
+          titulo="Ajuste de stock"
+          acao={actionAjusteStockUtilizador.bind(null, sessao.userId, lote.id)}
+          botao="Registar ajuste"
+          campos={[
+            {
+              name: 'movement_type',
+              label: 'Tipo',
+              type: 'select',
+              required: true,
+              options: [
+                { value: 'adjustment_in', label: 'Entrada (ajuste +)' },
+                { value: 'adjustment_out', label: 'Saída (ajuste -)' },
+              ],
+            },
+            { name: 'quantity', label: 'Quantidade', type: 'number', required: true, min: 0.001, step: '0.001' },
+            { name: 'reason', label: 'Motivo', required: true, placeholder: 'Ex.: conferencia de inventario' },
+          ]}
+        />
+      )}
     </div>
   );
 }
