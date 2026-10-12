@@ -1,197 +1,114 @@
-import PageHeader from '@/src/components/layout/PageHeader';
-import Button from '@/src/components/ui/button';
-import { Input } from '@/src/components/ui/input';
-import { Card } from '@/src/components/ui/card';
-import { createServerClient } from '@/src/lib/postgres/server';
-import { useState } from 'react';
+import { connection } from 'next/server';
+import PageHeader from '@/components/layout/PageHeader';
+import Tabela from '@/components/ui/tabela';
+import { Badge } from '@/components/ui/badge';
+import Formulario from '@/components/form/Formulario';
+import BotaoAcao from '@/components/form/BotaoAcao';
+import {
+  listarAgregados,
+  listarBeneficiarios,
+} from '@/modules/beneficiarios/queries';
+import {
+  actionCriarAgregado,
+  actionCriarBeneficiario,
+  actionDesativarAgregado,
+} from '@/modules/beneficiarios/actions';
+import type {
+  AgregadoInput,
+  BeneficiarioInput,
+} from '@/modules/beneficiarios/schemas';
+import { formatDateTime } from '@/lib/formatting';
 
-type Agregado = {
-  id: string;
-  code: string;
-  household_size: number | null;
-  parish: string | null;
-  status: string;
-};
+export const instant = false;
 
-async function listarAgregados(): Promise<Agregado[]> {
-  const postgres = createServerClient();
 
-  const { data, error } = await postgres
-    .from('households')
-    .select('*')
-    .order('code', { ascending: true });
-
-  if (error) {
-    return [];
-  }
-
-  return (data ?? []) as Agregado[];
-}
-
-async function criarAgregado(formData: FormData) {
-  'use server';
-
-  const code = formData.get('code') as string;
-  const household_size = Number(formData.get('household_size'));
-  const parish = (formData.get('parish') as string) || null;
-  const status = formData.get('status') as string || 'ativo';
-
-  const postgres = createServerClient();
-  const { error } = await postgres
-    .from('households')
-    .insert({ code, household_size, parish, status });
-
-  if (error) {
-    return { erro: 'Não foi possível criar o agregado.' };
-  }
-
-  return { sucesso: true };
-}
-
-export default function BeneficiariosPage() {
-  const [agregados, setAgregados] = useState<Agregado[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [abrirDialog, setAbrirDialog] = useState(false);
-  const [code, setCode] = useState('');
-  const [householdSize, setHouseholdSize] = useState('');
-  const [parish, setParish] = useState('');
-  const [status, setStatus] = useState('ativo');
-
-  async function carregar() {
-    const lista = await listarAgregados();
-    setAgregados(lista);
-    setCarregando(false);
-  }
+export default async function BeneficiariosPage() {
+  await connection();
+  const [agregados, beneficiarios] = await Promise.all([
+    listarAgregados(),
+    listarBeneficiarios(),
+  ]);
+  const agregadosAtivos = agregados.filter((a) => a.status !== 'inativo');
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Agregados familiares"
-        description="Gestão de agregados familiares apoiados."
-        action={
-          <Button onClick={() => setAbrirDialog(true)}>Novo agregado</Button>
-        }
-      />
+    <div className="space-y-8">
+      <PageHeader titulo="Beneficiários" descricao="Agregados familiares e pessoas apoiadas." />
 
-      <div
-        className={`fixed inset-0 z-50 flex items-center justify-center ${
-          abrirDialog ? '' : 'hidden'
-        }`}
-      >
-        <div className="absolute inset-0 bg-black/50" />
-        <div className="bg-white rounded-xl border border-gray-200 shadow-lg w-full max-w-md p-6">
-          <h2 className="text-lg font-semibold text-text mb-4">Novo agregado</h2>
-          <form action={criarAgregado} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-text mb-1">
-                Código
-              </label>
-              <Input
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="Ex.: DEMO-HH-01"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text mb-1">
-                N.º elementos
-              </label>
-              <Input
-                type="number"
-                value={householdSize}
-                onChange={(e) => setHouseholdSize(e.target.value)}
-                placeholder="1"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text mb-1">
-                Freguesia / área
-              </label>
-              <Input
-                value={parish}
-                onChange={(e) => setParish(e.target.value)}
-                placeholder="Ex.: Cedofeita"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text mb-1">
-                Estado
-              </label>
-              <Input
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                required
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                type="button"
-                onClick={() => {
-                  setAbrirDialog(false);
-                  setCode('');
-                  setHouseholdSize('');
-                  setParish('');
-                  setStatus('ativo');
-                }}
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-ink">Agregados</h2>
+        <Tabela
+          cabecalhos={['Código', 'Pessoas', 'Freguesia', 'Estado', 'Criado em', '']}
+          vazio="Ainda não há agregados."
+          linhas={agregados.map((a) => [
+            a.code,
+            a.household_size != null ? String(a.household_size) : '—',
+            a.parish ?? '—',
+            <Badge key={a.id} variant={a.status === 'inativo' ? 'secondary' : 'success'}>
+              {a.status}
+            </Badge>,
+            formatDateTime(a.created_at),
+            a.status !== 'inativo' ? (
+              <BotaoAcao
+                key={a.id}
+                acao={actionDesativarAgregado.bind(null, a.id)}
+                className="text-xs font-medium text-danger hover:underline"
               >
-                Cancelar
-              </Button>
-              <Button type="submit">Guardar</Button>
-            </div>
-          </form>
-        </div>
-      </div>
+                desativar
+              </BotaoAcao>
+            ) : (
+              '—'
+            ),
+          ])}
+        />
+        <Formulario
+          titulo="Novo agregado"
+          acao={actionCriarAgregado}
+          botao="Criar agregado"
+          campos={[
+            { name: 'code', label: 'Código', required: true, placeholder: 'Ex.: AGG-001' },
+            { name: 'household_size', label: 'Número de pessoas', type: 'number', min: 1, step: '1' },
+            { name: 'parish', label: 'Freguesia', placeholder: 'opcional' },
+          ]}
+        />
+      </section>
 
-      {carregando ? (
-        <div className="p-4 text-center text-muted">A carregar agregados…</div>
-      ) : (
-        <Card>
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                  Código
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                  N.º elementos
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                  Freguesia / área
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted">
-                  Estado
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {agregados.map((agregado) => (
-                <tr key={agregado.id} className="border-b border-gray-100">
-                  <td className="px-4 py-3">{agregado.code}</td>
-                  <td className="px-4 py-3">
-                    {agregado.household_size ?? '—'}
-                  </td>
-                  <td className="px-4 py-3 text-muted">
-                    {agregado.parish ?? '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-green-100 text-green-800">
-                      {agregado.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {agregados.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted">
-                    Nenhum agregado registado.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </Card>
-      )}
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-ink">Beneficiários</h2>
+        <Tabela
+          cabecalhos={['Código', 'Nome', 'Agregado', 'Telefone', 'Email', 'Contacto principal', 'Estado']}
+          vazio="Ainda não há beneficiários."
+          linhas={beneficiarios.map((b) => [
+            b.code,
+            b.full_name ?? '—',
+            b.household_code ?? '—',
+            b.phone ?? '—',
+            b.email ?? '—',
+            b.is_primary_contact ? 'sim' : 'não',
+            <Badge key={b.id} variant={b.status === 'inativo' ? 'secondary' : 'success'}>
+              {b.status}
+            </Badge>,
+          ])}
+        />
+        <Formulario
+          titulo="Novo beneficiário"
+          acao={actionCriarBeneficiario}
+          botao="Criar beneficiário"
+          campos={[
+            { name: 'code', label: 'Código', required: true, placeholder: 'Ex.: BEN-001' },
+            {
+              name: 'household_id',
+              label: 'Agregado',
+              type: 'select',
+              required: true,
+              options: agregadosAtivos.map((a) => ({ value: a.id, label: a.code })),
+            },
+            { name: 'full_name', label: 'Nome completo', placeholder: 'opcional' },
+            { name: 'phone', label: 'Telefone', placeholder: 'opcional' },
+            { name: 'email', label: 'Email', placeholder: 'opcional' },
+            { name: 'is_primary_contact', label: 'Contacto principal', type: 'checkbox', placeholder: 'É o contacto principal' },
+          ]}
+        />
+      </section>
     </div>
   );
 }
