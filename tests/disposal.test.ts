@@ -1,5 +1,5 @@
 /**
- * Testes de domínio — descartes (docs §13.4).
+ * Testes de domínio — descartes.
  */
 
 describe('register_disposal', () => {
