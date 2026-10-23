@@ -1,5 +1,5 @@
 /**
- * Testes de domínio — distribuições (docs §13.3).
+ * Testes de domínio — distribuições.
  */
 
 describe('confirm_distribution / cancel_distribution', () => {
