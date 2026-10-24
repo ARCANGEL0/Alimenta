@@ -1,10 +1,5 @@
 /**
- * Testes de domínio — aceitação de doação (docs §13.1).
- *
- * Estes testes exercitam as regras de negócio em volta da função RPC
- * close_donation_inspection. Como não há credenciais postgres neste ambiente,
- * eles documentam o comportamento esperado e podem ser executados quando a
- * ligação ao banco real estiver disponível.
+ * Testes de domínio — aceitação de doação.
  */
 
 describe('close_donation_inspection', () => {
