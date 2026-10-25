@@ -1,5 +1,5 @@
 /**
- * Testes de domínio — FEFO (docs §13.2).
+ * Testes de domínio — FEFO.
  */
 
 describe('suggest_batches_fefo', () => {
