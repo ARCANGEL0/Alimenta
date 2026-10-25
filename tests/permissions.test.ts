@@ -1,5 +1,5 @@
 /**
- * Testes de domínio — permissões (docs §13.5).
+ * Testes de domínio — permissões por role.
  */
 
 describe('permissoes por role', () => {
@@ -24,7 +24,7 @@ describe('permissoes por role', () => {
   });
 
   it('chave service role nunca aparece no bundle client', () => {
-    // SERVICE_ROLE_KEY so em ficheiros server-side
+    // chave de serviço nunca aparece no bundle client
     expect(true).toBe(true);
   });
 });
