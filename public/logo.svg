@@ -1,0 +1,6 @@
+<svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="40" height="40" rx="12" fill="#1B5E40"/>
+  <path d="M20 30C14 30 10 26 10 20C10 14 14 10 20 10C26 10 30 14 30 20C30 26 26 30 20 30ZM20 26C23.3 26 26 23.3 26 20C26 16.7 23.3 14 20 14C16.7 14 14 16.7 14 20C14 23.3 16.7 26 20 26Z" fill="white"/>
+  <path d="M20 14C20 11 22 9 25 9C28 9 30 11 30 14" stroke="#4ADE80" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="48" y="27" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" fill="#0F1A14" letter-spacing="-0.5">Alimenta<tspan fill="#1B5E40">+</tspan></text>
+</svg>
